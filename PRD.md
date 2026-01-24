@@ -342,3 +342,25 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
+```
+---
+
+## 16) Appendix B — Golden example (report shape expectations)
+
+A golden Markdown report must include:
+
+- Target, profile, timestamp
+
+- funnel table (steps)
+
+- primary finding with severity/confidence
+
+- evidence block with sanitized request/response facts
+
+- remediation snippet references + generation commands
+
+- verify command(s)
+
+(See golden example previously drafted in conversation; use as reference fixture.)
+
+
