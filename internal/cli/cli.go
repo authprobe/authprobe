@@ -4,6 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
 )
 
 type stringSlice []string
@@ -51,7 +55,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.Var(&headers, "header", "")
 	fs.Var(&headers, "H", "")
 	fs.String("proxy", "", "")
-	fs.Int("timeout", 60, "")
+	timeout := fs.Int("timeout", 60, "")
 	fs.Int("connect-timeout", 10, "")
 	fs.Int("retries", 1, "")
 	fs.Bool("insecure", false, "")
@@ -75,10 +79,38 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 
-	_ = headers
+	wellKnownURL, err := buildWellKnownURL(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 3
+	}
+
+	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
+	req, err := http.NewRequest(http.MethodGet, wellKnownURL, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 3
+	}
+
+	for _, header := range headers {
+		key, value, err := parseHeader(header)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 3
+		}
+		req.Header.Add(key, value)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 3
+	}
+	defer resp.Body.Close()
+
 	_ = profile
 
-	fmt.Fprintln(stdout, "scan functionality not implemented in v0.1 stub")
+	fmt.Fprintf(stdout, "GET %s -> %s\n", wellKnownURL, resp.Status)
 	return 0
 }
 
@@ -143,4 +175,32 @@ func hasHelp(args []string) bool {
 
 func isHelp(arg string) bool {
 	return arg == "-h" || arg == "--help"
+}
+
+func buildWellKnownURL(mcpURL string) (string, error) {
+	parsed, err := url.Parse(mcpURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid mcp url: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid mcp url: %q", mcpURL)
+	}
+	return (&url.URL{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+		Path:   "/.well-known/oauth-protected-resource",
+	}).String(), nil
+}
+
+func parseHeader(raw string) (string, string, error) {
+	parts := strings.SplitN(raw, ":", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid header format %q", raw)
+	}
+	key := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+	if key == "" {
+		return "", "", fmt.Errorf("invalid header format %q", raw)
+	}
+	return key, value, nil
 }
