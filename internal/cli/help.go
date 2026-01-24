@@ -40,7 +40,7 @@ OUTPUTS:
       --output-dir <dir>   Write all requested outputs into a directory.
 
 DIAGNOSTICS:
-      --verbose            Verbose logs (includes request timeline; still redacted).
+      --verbose            Verbose logs (includes request/response headers + bodies; still redacted).
       --no-redact          Disable redaction (NOT recommended; for local debugging only).
 
 EXAMPLES:
