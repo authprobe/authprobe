@@ -90,8 +90,8 @@ func runMatrix(args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("matrix", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	format := fs.String("format", "table", "")
-	failOn := fs.String("fail-on", "high", "")
+	fs.String("format", "table", "")
+	fs.String("fail-on", "high", "")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
@@ -100,16 +100,6 @@ func runMatrix(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: <mcp_url> is required")
-		return 3
-	}
-
-	if !isAllowed(*format, "table", "md", "json") {
-		fmt.Fprintln(stderr, "error: --format must be one of table, md, json")
-		return 3
-	}
-
-	if !isAllowed(*failOn, "none", "low", "medium", "high") {
-		fmt.Fprintln(stderr, "error: --fail-on must be one of none, low, medium, high")
 		return 3
 	}
 
@@ -125,7 +115,7 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("fix", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	target := fs.String("target", "", "")
+	fs.String("target", "", "")
 	fs.Bool("explain", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -135,16 +125,6 @@ func runFix(args []string, stdout, stderr io.Writer) int {
 
 	if fs.NArg() != 1 {
 		fmt.Fprintln(stderr, "error: <FINDING_CODE> is required")
-		return 3
-	}
-
-	if *target == "" {
-		fmt.Fprintln(stderr, "error: --target is required")
-		return 3
-	}
-
-	if !isAllowed(*target, "fastapi", "nginx", "envoy", "generic") {
-		fmt.Fprintln(stderr, "error: --target must be one of fastapi, nginx, envoy, generic")
 		return 3
 	}
 
@@ -163,13 +143,4 @@ func hasHelp(args []string) bool {
 
 func isHelp(arg string) bool {
 	return arg == "-h" || arg == "--help"
-}
-
-func isAllowed(value string, allowed ...string) bool {
-	for _, item := range allowed {
-		if value == item {
-			return true
-		}
-	}
-	return false
 }
