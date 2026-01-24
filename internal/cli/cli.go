@@ -126,7 +126,14 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 
-		fmt.Fprintf(stdout, "GET %s -> %s\n", wellKnownURL, resp.Status)
+		statusNote := ""
+		if resp.StatusCode == http.StatusNotFound {
+			parsedURL, err := url.Parse(wellKnownURL)
+			if err == nil && strings.HasSuffix(parsedURL.Path, "/.well-known/oauth-protected-resource") {
+				statusNote = " (https://datatracker.ietf.org/doc/html/rfc9728#section-3.1)"
+			}
+		}
+		fmt.Fprintf(stdout, "GET %s -> %s%s\n", wellKnownURL, resp.Status, statusNote)
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			break
