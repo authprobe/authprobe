@@ -86,6 +86,7 @@ Common flags:
 - `-H "Header: Value"` (repeatable)
 - `--proxy http://127.0.0.1:8080`
 - `--fail-on none|low|medium|high`
+- `--verbose` (print request/response headers + bodies during scan)
 - Outputs: `--md`, `--json`, `--sarif`, `--bundle`
 
 Examples:
