@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -66,7 +68,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.String("sarif", "", "")
 	fs.String("bundle", "", "")
 	fs.String("output-dir", "", "")
-	fs.Bool("verbose", false, "")
+	verbose := fs.Bool("verbose", false, "")
 	fs.Bool("no-redact", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -101,6 +103,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		req.Header.Add(key, value)
 	}
 
+	if *verbose {
+		if err := writeVerboseRequest(stdout, req); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 3
+		}
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
@@ -109,6 +118,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	defer resp.Body.Close()
 
 	_ = profile
+
+	if *verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 3
+		}
+	}
 
 	fmt.Fprintf(stdout, "GET %s -> %s\n", wellKnownURL, resp.Status)
 	return 0
@@ -203,4 +219,79 @@ func parseHeader(raw string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid header format %q", raw)
 	}
 	return key, value, nil
+}
+
+func writeVerboseRequest(w io.Writer, req *http.Request) error {
+	body, err := drainBody(&req.Body)
+	if err != nil {
+		return fmt.Errorf("read request body: %w", err)
+	}
+
+	target := req.URL.RequestURI()
+	if target == "" {
+		target = req.URL.String()
+	}
+
+	fmt.Fprintf(w, "> %s %s %s\n", req.Method, target, req.Proto)
+	host := req.Host
+	if host == "" {
+		host = req.URL.Host
+	}
+	if host != "" {
+		fmt.Fprintf(w, "> Host: %s\n", host)
+	}
+	writeHeaders(w, req.Header, ">")
+	writeBody(w, body, ">")
+	return nil
+}
+
+func writeVerboseResponse(w io.Writer, resp *http.Response) error {
+	body, err := drainBody(&resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response body: %w", err)
+	}
+
+	fmt.Fprintf(w, "< %s %s\n", resp.Proto, resp.Status)
+	writeHeaders(w, resp.Header, "<")
+	writeBody(w, body, "<")
+	return nil
+}
+
+func drainBody(body *io.ReadCloser) ([]byte, error) {
+	if body == nil || *body == nil {
+		return nil, nil
+	}
+	payload, err := io.ReadAll(*body)
+	if err != nil {
+		return nil, err
+	}
+	*body = io.NopCloser(bytes.NewReader(payload))
+	return payload, nil
+}
+
+func writeHeaders(w io.Writer, headers http.Header, prefix string) {
+	if len(headers) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		for _, value := range headers[key] {
+			fmt.Fprintf(w, "%s %s: %s\n", prefix, key, value)
+		}
+	}
+}
+
+func writeBody(w io.Writer, body []byte, prefix string) {
+	fmt.Fprintf(w, "%s\n", prefix)
+	if len(body) == 0 {
+		fmt.Fprintf(w, "%s (empty body)\n", prefix)
+		return
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		fmt.Fprintf(w, "%s %s\n", prefix, line)
+	}
 }
