@@ -342,7 +342,93 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
+
+
 ```
+
+authprobe matrix --help
+
+```
+
+authprobe matrix: Compare MCP OAuth compatibility across multiple client profiles and show where behavior diverges.
+
+USAGE:
+  authprobe matrix <mcp_url> [flags]
+
+ARGUMENTS:
+  <mcp_url>                MCP endpoint URL (example: https://example.com/mcp)
+
+FLAGS:
+      --profiles <list>    Comma-separated list of profiles to run.
+                           Options: generic, vscode, inspector
+                           Default: generic,vscode,inspector
+
+  -H, --header <k:v>       Add a request header (repeatable).
+      --proxy <url>        HTTP(S) proxy for outbound requests.
+      --timeout <sec>      Overall timeout per profile in seconds. Default: 60
+      --insecure           Allow invalid TLS certificates (dev only).
+      --no-follow-redirects
+                           Do not follow HTTP redirects.
+
+      --fail-on <level>    Exit non-zero if any profile has findings at/above this severity.
+                           Options: none, low, medium, high
+                           Default: high
+
+OUTPUTS:
+      --format <fmt>       Output format for stdout.
+                           Options: table, md, json
+                           Default: table
+
+      --json <path>        Write structured JSON matrix to file.
+      --md <path>          Write Markdown matrix to file.
+      --bundle <path>      Write sanitized evidence bundle (zip) containing per-profile traces.
+
+DIAGNOSTICS:
+      --verbose            Verbose logs (includes request timeline; still redacted).
+
+EXAMPLES:
+  authprobe matrix https://mcp.example.com/mcp
+  authprobe matrix https://mcp.example.com/mcp --profiles vscode,inspector --format md
+  authprobe matrix https://mcp.example.com/mcp --json matrix.json --bundle matrix-evidence.zip
+
+```
+authprobe fix --help
+
+```
+authprobe fix: Generate remediation snippets for a specific finding code.
+
+USAGE:
+  authprobe fix <FINDING_CODE> [flags]
+
+ARGUMENTS:
+  <FINDING_CODE>           Finding code from `authprobe scan` or `authprobe matrix`.
+                           Example: DISCOVERY_ROOT_WELLKNOWN_404
+
+FLAGS:
+  -t, --target <name>      Target environment to generate a snippet for.
+                           Options: fastapi, starlette, nginx, envoy, cloudflare, generic
+                           Default: generic
+
+      --out <path>         Write the snippet to a file (stdout by default).
+      --explain            Include rationale and verification steps.
+      --smart              Use Smart Fix mode (LLM-assisted) to tailor the snippet.
+                           Requires --smart-endpoint or AUTH_PROBE_SMART_ENDPOINT env var.
+
+      --smart-endpoint <url>
+                           URL for Smart Fix backend (optional; advanced).
+      --context <path>     Optional path to config/context file (YAML/JSON/text) used by --smart.
+                           Example: ingress.yaml, nginx.conf, values.yaml
+
+EXAMPLES:
+  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target fastapi
+  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --explain
+  authprobe fix HEADER_STRIPPED_BY_PROXY_SUSPECTED --target envoy --out envoy-snippet.yaml
+  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --smart --context ingress.yaml
+
+```
+
+
+
 ---
 
 ## 16) Appendix B — Golden example (report shape expectations)
