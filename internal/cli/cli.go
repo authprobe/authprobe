@@ -81,52 +81,57 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 
-	wellKnownURL, err := buildWellKnownURL(fs.Arg(0))
+	wellKnownURLs, err := buildWellKnownURLs(fs.Arg(0))
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
 	}
 
 	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
-	req, err := http.NewRequest(http.MethodGet, wellKnownURL, nil)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 3
-	}
-
-	for _, header := range headers {
-		key, value, err := parseHeader(header)
+	for _, wellKnownURL := range wellKnownURLs {
+		req, err := http.NewRequest(http.MethodGet, wellKnownURL, nil)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 3
 		}
-		req.Header.Add(key, value)
-	}
 
-	if *verbose {
-		if err := writeVerboseRequest(stdout, req); err != nil {
+		for _, header := range headers {
+			key, value, err := parseHeader(header)
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 3
+			}
+			req.Header.Add(key, value)
+		}
+
+		if *verbose {
+			if err := writeVerboseRequest(stdout, req); err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 3
+			}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 3
 		}
-	}
+		_ = profile
 
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 3
-	}
-	defer resp.Body.Close()
+		if *verbose {
+			if err := writeVerboseResponse(stdout, resp); err != nil {
+				resp.Body.Close()
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 3
+			}
+		}
 
-	_ = profile
-
-	if *verbose {
-		if err := writeVerboseResponse(stdout, resp); err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 3
+		fmt.Fprintf(stdout, "GET %s -> %s\n", wellKnownURL, resp.Status)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			break
 		}
 	}
-
-	fmt.Fprintf(stdout, "GET %s -> %s\n", wellKnownURL, resp.Status)
 	return 0
 }
 
@@ -193,19 +198,33 @@ func isHelp(arg string) bool {
 	return arg == "-h" || arg == "--help"
 }
 
-func buildWellKnownURL(mcpURL string) (string, error) {
+func buildWellKnownURLs(mcpURL string) ([]string, error) {
 	parsed, err := url.Parse(mcpURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid mcp url: %w", err)
+		return nil, fmt.Errorf("invalid mcp url: %w", err)
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("invalid mcp url: %q", mcpURL)
+		return nil, fmt.Errorf("invalid mcp url: %q", mcpURL)
 	}
-	return (&url.URL{
+	root := (&url.URL{
 		Scheme: parsed.Scheme,
 		Host:   parsed.Host,
 		Path:   "/.well-known/oauth-protected-resource",
-	}).String(), nil
+	}).String()
+	wellKnown := []string{root}
+	escapedPath := parsed.EscapedPath()
+	if escapedPath == "" {
+		escapedPath = "/"
+	}
+	trimmedPath := strings.TrimSuffix(escapedPath, "/")
+	if trimmedPath != "" && trimmedPath != "/" {
+		wellKnown = append(wellKnown, (&url.URL{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   "/.well-known/oauth-protected-resource" + trimmedPath,
+		}).String())
+	}
+	return wellKnown, nil
 }
 
 func parseHeader(raw string) (string, string, error) {
