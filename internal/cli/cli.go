@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -60,6 +59,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Int("timeout", 60, "")
 	fs.Int("connect-timeout", 10, "")
 	fs.Int("retries", 1, "")
+	fs.String("rfc9728", "best-effort", "")
+	fs.Bool("allow-private-issuers", false, "")
 	fs.Bool("insecure", false, "")
 	fs.Bool("no-follow-redirects", false, "")
 	fs.String("fail-on", "high", "")
@@ -71,6 +72,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	verbose := fs.Bool("verbose", false, "")
 	fs.Bool("no-redact", false, "")
 
+	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
@@ -81,63 +83,35 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 
-	wellKnownURLs, err := buildWellKnownURLs(fs.Arg(0))
+	config := scanConfig{
+		Target:              fs.Arg(0),
+		Profile:             *profile,
+		Headers:             headers,
+		Timeout:             time.Duration(*timeout) * time.Second,
+		Verbose:             *verbose,
+		FailOn:              fs.Lookup("fail-on").Value.String(),
+		RFC9728Mode:         fs.Lookup("rfc9728").Value.String(),
+		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
+		NoFollowRedirects:   fs.Lookup("no-follow-redirects").Value.String() == "true",
+		JSONPath:            fs.Lookup("json").Value.String(),
+		MDPath:              fs.Lookup("md").Value.String(),
+		BundlePath:          fs.Lookup("bundle").Value.String(),
+		OutputDir:           fs.Lookup("output-dir").Value.String(),
+	}
+
+	report, summary, err := runScanFunnel(config, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
 	}
 
-	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
-	for _, wellKnownURL := range wellKnownURLs {
-		req, err := http.NewRequest(http.MethodGet, wellKnownURL, nil)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 3
-		}
+	if err := writeOutputs(report, summary, config); err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 3
+	}
 
-		for _, header := range headers {
-			key, value, err := parseHeader(header)
-			if err != nil {
-				fmt.Fprintf(stderr, "error: %v\n", err)
-				return 3
-			}
-			req.Header.Add(key, value)
-		}
-
-		if *verbose {
-			if err := writeVerboseRequest(stdout, req); err != nil {
-				fmt.Fprintf(stderr, "error: %v\n", err)
-				return 3
-			}
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 3
-		}
-		_ = profile
-
-		if *verbose {
-			if err := writeVerboseResponse(stdout, resp); err != nil {
-				resp.Body.Close()
-				fmt.Fprintf(stderr, "error: %v\n", err)
-				return 3
-			}
-		}
-
-		statusNote := ""
-		if resp.StatusCode == http.StatusNotFound {
-			parsedURL, err := url.Parse(wellKnownURL)
-			if err == nil && strings.HasSuffix(parsedURL.Path, "/.well-known/oauth-protected-resource") {
-				statusNote = " (https://datatracker.ietf.org/doc/html/rfc9728#section-3.1)"
-			}
-		}
-		fmt.Fprintf(stdout, "GET %s -> %s%s\n", wellKnownURL, resp.Status, statusNote)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			break
-		}
+	if shouldFail(report.PrimaryFinding, config.FailOn) {
+		return 2
 	}
 	return 0
 }
@@ -205,37 +179,54 @@ func isHelp(arg string) bool {
 	return arg == "-h" || arg == "--help"
 }
 
-func buildWellKnownURLs(mcpURL string) ([]string, error) {
-	parsed, err := url.Parse(mcpURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid mcp url: %w", err)
+func normalizeScanArgs(args []string) []string {
+	flagsWithValue := map[string]bool{
+		"--profile":         true,
+		"-p":                true,
+		"--header":          true,
+		"-H":                true,
+		"--proxy":           true,
+		"--timeout":         true,
+		"--connect-timeout": true,
+		"--retries":         true,
+		"--fail-on":         true,
+		"--json":            true,
+		"--md":              true,
+		"--sarif":           true,
+		"--bundle":          true,
+		"--output-dir":      true,
+		"--rfc9728":         true,
 	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("invalid mcp url: %q", mcpURL)
+	boolFlags := map[string]bool{
+		"--allow-private-issuers": true,
+		"--insecure":              true,
+		"--no-follow-redirects":   true,
+		"--verbose":               true,
+		"--no-redact":             true,
 	}
-	addUnique := func(urls []string, value string) []string {
-		for _, existing := range urls {
-			if existing == value {
-				return urls
+
+	var flagArgs []string
+	var positionals []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			positionals = append(positionals, args[i+1:]...)
+			break
+		}
+		if strings.HasPrefix(arg, "-") {
+			if strings.Contains(arg, "=") || boolFlags[arg] {
+				flagArgs = append(flagArgs, arg)
+				continue
+			}
+			if flagsWithValue[arg] && i+1 < len(args) {
+				flagArgs = append(flagArgs, arg, args[i+1])
+				i++
+				continue
 			}
 		}
-		return append(urls, value)
+		positionals = append(positionals, arg)
 	}
-	wellKnown := []string{}
-	escapedPath := parsed.EscapedPath()
-	if escapedPath == "" {
-		escapedPath = "/"
-	}
-	trimmedPath := strings.TrimSuffix(escapedPath, "/")
-	if trimmedPath != "" && trimmedPath != "/" {
-		basePath := (&url.URL{
-			Scheme: parsed.Scheme,
-			Host:   parsed.Host,
-			Path:   "/.well-known/oauth-protected-resource" + trimmedPath,
-		}).String()
-		wellKnown = addUnique(wellKnown, basePath)
-	}
-	return wellKnown, nil
+	return append(flagArgs, positionals...)
 }
 
 func parseHeader(raw string) (string, string, error) {
