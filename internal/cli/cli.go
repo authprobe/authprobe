@@ -89,53 +89,69 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 
 	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
 	for _, wellKnownURL := range wellKnownURLs {
-		req, err := http.NewRequest(http.MethodGet, wellKnownURL, nil)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 3
-		}
-
-		for _, header := range headers {
-			key, value, err := parseHeader(header)
+		method := http.MethodGet
+		for {
+			var body io.Reader
+			if method == http.MethodPost {
+				body = strings.NewReader("{}")
+			}
+			req, err := http.NewRequest(method, wellKnownURL, body)
 			if err != nil {
 				fmt.Fprintf(stderr, "error: %v\n", err)
 				return 3
 			}
-			req.Header.Add(key, value)
-		}
 
-		if *verbose {
-			if err := writeVerboseRequest(stdout, req); err != nil {
+			for _, header := range headers {
+				key, value, err := parseHeader(header)
+				if err != nil {
+					fmt.Fprintf(stderr, "error: %v\n", err)
+					return 3
+				}
+				req.Header.Add(key, value)
+			}
+			if method == http.MethodPost {
+				req.Header.Set("Content-Type", "application/json")
+			}
+
+			if *verbose {
+				if err := writeVerboseRequest(stdout, req); err != nil {
+					fmt.Fprintf(stderr, "error: %v\n", err)
+					return 3
+				}
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
 				fmt.Fprintf(stderr, "error: %v\n", err)
 				return 3
 			}
-		}
+			_ = profile
 
-		resp, err := client.Do(req)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 3
-		}
-		_ = profile
-
-		if *verbose {
-			if err := writeVerboseResponse(stdout, resp); err != nil {
-				resp.Body.Close()
-				fmt.Fprintf(stderr, "error: %v\n", err)
-				return 3
+			if *verbose {
+				if err := writeVerboseResponse(stdout, resp); err != nil {
+					resp.Body.Close()
+					fmt.Fprintf(stderr, "error: %v\n", err)
+					return 3
+				}
 			}
-		}
 
-		statusNote := ""
-		if resp.StatusCode == http.StatusNotFound {
-			parsedURL, err := url.Parse(wellKnownURL)
-			if err == nil && strings.HasSuffix(parsedURL.Path, "/.well-known/oauth-protected-resource") {
-				statusNote = " (https://datatracker.ietf.org/doc/html/rfc9728#section-3.1)"
+			statusNote := ""
+			if resp.StatusCode == http.StatusNotFound {
+				parsedURL, err := url.Parse(wellKnownURL)
+				if err == nil && strings.HasSuffix(parsedURL.Path, "/.well-known/oauth-protected-resource") {
+					statusNote = " (https://datatracker.ietf.org/doc/html/rfc9728#section-3.1)"
+				}
 			}
-		}
-		fmt.Fprintf(stdout, "GET %s -> %s%s\n", wellKnownURL, resp.Status, statusNote)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
+			fmt.Fprintf(stdout, "%s %s -> %s%s\n", method, wellKnownURL, resp.Status, statusNote)
+			resp.Body.Close()
+
+			if resp.StatusCode == http.StatusMethodNotAllowed && method == http.MethodGet {
+				method = http.MethodPost
+				continue
+			}
+			if resp.StatusCode != http.StatusNotFound {
+				break
+			}
 			break
 		}
 	}
