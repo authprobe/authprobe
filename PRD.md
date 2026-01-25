@@ -41,6 +41,11 @@ A developer building or integrating a **remote MCP server with OAuth** who is cu
 5) **CI-ready**: stable finding codes, exit codes, severity gating, machine-readable outputs  
 6) **Redaction-by-default** for anything sensitive (tokens, cookies, secrets)
 
+### RFC 9728 conformance (v0.1)
+AuthProbe should validate **OAuth Protected Resource Metadata** behavior per RFC 9728 in a way that’s useful to developers:
+- Default: **best-effort** conformance checks (fail on key MUST violations; warn on SHOULD/best-practice gaps).
+- Optional: **strict** mode for CI gates and “spec-hardening” work.
+
 ---
 
 ## 4) Non-goals (explicitly out of scope for v0.1)
@@ -90,6 +95,10 @@ AuthProbe runs a staged funnel with deterministic step IDs. Each step emits PASS
   - root candidate: `/.well-known/oauth-protected-resource`
   - path-suffix candidate: `/.well-known/oauth-protected-resource/<mcp_path>`
 - Validate PRM JSON fields (especially `authorization_servers`), and validate canonical `resource` value.
+- Additionally, compute RFC 9728 **well-known URL(s)** from the protected resource identifier and probe:
+  - `/.well-known/oauth-protected-resource` (root)
+  - `/.well-known/oauth-protected-resource/<path>` (path-suffix, when the resource has a path)
+- Enforce RFC 9728 anti-impersonation rule: the PRM `resource` **must exactly match** the protected resource identifier used to construct/fetch metadata (code-point equality; no Unicode normalization).
 
 **Step 3: Authorization server metadata**
 - From PRM `authorization_servers`, fetch metadata (RFC 8414 / OIDC-style discovery).
@@ -104,6 +113,27 @@ AuthProbe runs a staged funnel with deterministic step IDs. Each step emits PASS
 **(Optional Step 5: Authenticated MCP call)**
 - Only if user provides a bearer token via `--bearer-token` (optional, may be deferred if not needed for v0.1):
   - Make one MCP call with `Authorization: Bearer <token>` and classify 401 results.
+
+---
+
+## 6.1) RFC 9728 checks (OAuth Protected Resource Metadata)
+
+AuthProbe should implement explicit RFC 9728 checks for:
+- **Well-known URL construction** (root and path-suffix variants)
+- **PRM HTTP semantics** (`200 OK`, JSON object body, correct content-type)
+- **Required/optional fields and constraints**
+- **Anti-impersonation** (`resource` equality rules)
+- **TLS and SSRF guardrails** when following `authorization_servers`
+
+### `--rfc9728` modes
+- `off`: skip RFC 9728-specific checks (only core MCP/OAuth checks).
+- `best-effort` (default): fail on key MUST violations; warn on SHOULD/best-practice gaps.
+- `strict`: fail on all MUST violations + escalate key SHOULD gaps to failures (CI-friendly).
+
+### Private issuer safety (SSRF guardrail)
+When fetching authorization server metadata from `authorization_servers`, AuthProbe must avoid accidental SSRF:
+- By default, block **private/loopback/link-local** issuer targets.
+- Allow override for enterprise/internal deployments via `--allow-private-issuers`.
 
 ---
 
@@ -149,6 +179,85 @@ Behavior suggests `WWW-Authenticate` or required headers are removed by a proxy/
 10) `MULTI_INSTANCE_STATE_RISK` *(warning-level in v0.1)*  
 Signals stateful proxy flows would fail under multi-replica without shared storage/sticky routing.
 
+### RFC 9728 conformance (additional finding codes)
+
+**PRM / well-known construction**
+11) `PRM_WELLKNOWN_PATH_SUFFIX_MISSING`  
+Path-suffix PRM endpoint (e.g., `/.well-known/oauth-protected-resource/<path>`) is missing/unreachable when the protected resource identifier contains a path.
+
+**PRM HTTP semantics**
+12) `PRM_HTTP_STATUS_NOT_200`  
+PRM endpoint returned a non-200 HTTP status where metadata is expected.
+
+13) `PRM_CONTENT_TYPE_NOT_JSON`  
+PRM endpoint did not return `application/json`.
+
+14) `PRM_NOT_JSON_OBJECT`  
+PRM response body is not a JSON object.
+
+**PRM field constraints**
+15) `PRM_RESOURCE_MISSING`  
+PRM response missing required `resource` parameter.
+
+16) `PRM_JWKS_URI_NOT_HTTPS`  
+PRM `jwks_uri` is present but not `https:`.
+
+17) `PRM_BEARER_METHODS_INVALID`  
+PRM `bearer_methods_supported` contains values outside `{header, body, query}`.
+
+18) `PRM_SIGNING_ALG_NONE_FORBIDDEN`  
+PRM `resource_signing_alg_values_supported` contains the forbidden value `none`.
+
+**Best-practice warnings (best-effort; strict may fail)**
+19) `PRM_CACHE_CONTROL_MISSING`  
+PRM response lacks explicit caching directives (`Cache-Control`), which can cause unnecessary load and inconsistent client behavior.
+
+**SSRF / safety**
+20) `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`  
+Authorization server issuer resolves to a private/loopback/link-local target and was blocked (use `--allow-private-issuers` to override).
+
+---
+
+## 7.1) Severity and confidence rules (v0.1)
+
+AuthProbe findings must be consistent and CI-friendly. Each finding includes:
+- **severity**: low / medium / high
+- **confidence**: 0.00–1.00 based on direct evidence
+
+### Default severity mapping
+**HIGH**
+- `DISCOVERY_NO_WWW_AUTHENTICATE`
+- `DISCOVERY_ROOT_WELLKNOWN_404`
+- `PRM_MISSING_AUTHORIZATION_SERVERS`
+- `PRM_RESOURCE_MISMATCH`
+- `PRM_RESOURCE_MISSING`
+- `PRM_HTTP_STATUS_NOT_200` (when metadata is expected)
+- `PRM_CONTENT_TYPE_NOT_JSON`
+- `PRM_NOT_JSON_OBJECT`
+- `PRM_JWKS_URI_NOT_HTTPS`
+- `PRM_BEARER_METHODS_INVALID`
+- `PRM_SIGNING_ALG_NONE_FORBIDDEN`
+- `AUTH_SERVER_METADATA_UNREACHABLE`
+- `AUTH_SERVER_METADATA_INVALID`
+
+**MEDIUM**
+- `HEADER_STRIPPED_BY_PROXY_SUSPECTED`
+- `PRM_WELLKNOWN_PATH_SUFFIX_MISSING`
+- `TOKEN_RESPONSE_NOT_JSON_RISK`
+- `TOKEN_HTTP200_ERROR_PAYLOAD_RISK`
+- `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`
+- `MULTI_INSTANCE_STATE_RISK`
+
+**LOW**
+- `PRM_CACHE_CONTROL_MISSING`
+
+### Confidence guidelines (examples)
+- **1.00**: direct deterministic mismatch (HTTP status, content-type, required field missing, exact `resource` inequality).
+- **0.85–0.95**: strong inference from repeated probes (header stripping suspected).
+- **0.60–0.80**: heuristic risk patterns (token endpoint readiness warnings).
+
+**Primary finding selection rule (unchanged):** choose the highest-severity finding; tie-break by highest confidence.
+
 ---
 
 ## 8) Remediation generator (v0.1)
@@ -169,6 +278,12 @@ Signals stateful proxy flows would fail under multi-replica without shared stora
   - Guidance + example corrected PRM `resource`
 - `HEADER_STRIPPED_BY_PROXY_SUSPECTED`
   - Nginx/Envoy header allow/forward snippet + verification steps
+- `PRM_HTTP_STATUS_NOT_200`, `PRM_CONTENT_TYPE_NOT_JSON`, `PRM_NOT_JSON_OBJECT`, `PRM_RESOURCE_MISSING`
+  - “Minimal valid PRM” template + debugging checklist
+- `PRM_JWKS_URI_NOT_HTTPS`, `PRM_BEARER_METHODS_INVALID`, `PRM_SIGNING_ALG_NONE_FORBIDDEN`
+  - Field constraint explanation + corrected examples
+- `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`
+  - Explain SSRF guardrail + `--allow-private-issuers` override (with caution)
 
 Every fix output MUST include:
 - snippet ID (e.g., `fix/nginx/prm_root_rewrite.conf`)
@@ -254,6 +369,11 @@ Each fixture includes:
 **Proxy/infra**
 7) `header_stripping_suspected` → expects `HEADER_STRIPPED_BY_PROXY_SUSPECTED`
 
+**RFC 9728 conformance**
+8) `path_suffix_prm_missing` → expects `PRM_WELLKNOWN_PATH_SUFFIX_MISSING`
+9) `prm_jwks_uri_not_https` → expects `PRM_JWKS_URI_NOT_HTTPS`
+10) `issuer_private_blocked` → expects `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`
+
 ### Test requirements
 - `go test ./...` must pass
 - Golden file tests must validate report stability
@@ -318,6 +438,14 @@ FLAGS:
                            Connection timeout in seconds. Default: 10
       --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
 
+      --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+
+      --allow-private-issuers
+                           Allow fetching authorization server metadata from private/loopback/link-local issuers.
+                           (Use only in trusted networks.)
+
       --insecure           Allow invalid TLS certificates (dev only).
       --no-follow-redirects
                            Do not follow HTTP redirects.
@@ -342,14 +470,11 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
-
-
+  authprobe scan https://mcp.example.com/mcp --rfc9728 strict
 ```
 
-authprobe matrix --help
-
-```
-
+### `authprobe matrix --help`
+```text
 authprobe matrix: Compare MCP OAuth compatibility across multiple client profiles and show where behavior diverges.
 
 USAGE:
@@ -366,6 +491,15 @@ FLAGS:
   -H, --header <k:v>       Add a request header (repeatable).
       --proxy <url>        HTTP(S) proxy for outbound requests.
       --timeout <sec>      Overall timeout per profile in seconds. Default: 60
+
+      --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+
+      --allow-private-issuers
+                           Allow fetching authorization server metadata from private/loopback/link-local issuers.
+                           (Use only in trusted networks.)
+
       --insecure           Allow invalid TLS certificates (dev only).
       --no-follow-redirects
                            Do not follow HTTP redirects.
@@ -390,11 +524,10 @@ EXAMPLES:
   authprobe matrix https://mcp.example.com/mcp
   authprobe matrix https://mcp.example.com/mcp --profiles vscode,inspector --format md
   authprobe matrix https://mcp.example.com/mcp --json matrix.json --bundle matrix-evidence.zip
-
 ```
-authprobe fix --help
 
-```
+### `authprobe fix --help`
+```text
 authprobe fix: Generate remediation snippets for a specific finding code.
 
 USAGE:
@@ -424,29 +557,18 @@ EXAMPLES:
   authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --explain
   authprobe fix HEADER_STRIPPED_BY_PROXY_SUSPECTED --target envoy --out envoy-snippet.yaml
   authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --smart --context ingress.yaml
-
 ```
-
-
 
 ---
 
 ## 16) Appendix B — Golden example (report shape expectations)
 
 A golden Markdown report must include:
-
 - Target, profile, timestamp
-
 - funnel table (steps)
-
 - primary finding with severity/confidence
-
 - evidence block with sanitized request/response facts
-
 - remediation snippet references + generation commands
-
 - verify command(s)
 
-(See golden example previously drafted in conversation; use as reference fixture.)
-
-
+(Use the golden example from the design discussion as the fixture reference.)
