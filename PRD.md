@@ -1,19 +1,14 @@
 # AuthProbe v0.1 PRD
 
 **Product:** AuthProbe  
-**Tagline (README-facing):** MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks)  
-**Primary wedge:** Developer-first CLI for debugging broken MCP OAuth flows, with proof-grade evidence and copy/paste remediation.
+**Summary:** MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks)  
+Developer-first CLI for debugging broken MCP OAuth flows, with proof-grade evidence and copy/paste remediation.
 
 ---
 
 ## 1) Executive summary
 
 AuthProbe is a CLI that pinpoints *where* MCP OAuth breaks (and *why*) across common client behaviors (e.g., VS Code vs Inspector-style), then generates deterministic remediation snippets and verification commands.
-
-**North star loop:**  
-**One command → one-page diagnosis → one copy/paste fix → rerun → green.**
-
-This v0.1 intentionally avoids browser-driven login automation and long-running proxy modes. The goal is maximum developer adoption via speed, clarity, and trust.
 
 ---
 
