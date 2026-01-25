@@ -1,6 +1,6 @@
 # AuthProbe — MCP OAuth Diagnostics (scan, matrix, fix)
 
-**AuthProbe** is a fast CLI that tells you *exactly why* **MCP OAuth** is broken — and how to fix it.
+**AuthProbe** is a fast CLI that tells you *exactly why* **MCP OAuth** is broken - and how to fix it.
 
 It runs a staged probe (discovery → metadata → token readiness → auth header checks), compares behavior across common client styles (VS Code vs Inspector-ish), and generates **copy/paste remediation snippets** for the most common failure modes.
 
