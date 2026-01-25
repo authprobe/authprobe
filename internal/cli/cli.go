@@ -72,6 +72,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	verbose := fs.Bool("verbose", false, "")
 	fs.Bool("no-redact", false, "")
 
+	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
