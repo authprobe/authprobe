@@ -93,7 +93,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps := []scanStep{}
 
 	step1 := scanStep{ID: 1, Name: "MCP probe (401 + WWW-Authenticate)"}
-	resourceMetadata, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace)
+	resourceMetadata, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace, stdout)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
@@ -117,7 +117,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	}
 
 	step2 := scanStep{ID: 2, Name: "PRM fetch matrix"}
-	prmResult, step2Findings, step2Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, &trace)
+	prmResult, step2Findings, step2Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, &trace, stdout)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
@@ -131,7 +131,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 		step3.Status = "SKIP"
 		step3.Detail = "no authorization_servers in PRM"
 	} else {
-		step3Findings, step3Evidence := fetchAuthServerMetadata(client, config, prmResult.AuthorizationServers, &trace)
+		step3Findings, step3Evidence := fetchAuthServerMetadata(client, config, prmResult.AuthorizationServers, &trace, stdout)
 		findings = append(findings, step3Findings...)
 		step3.Status = statusFromFindings(step3Findings, true)
 		step3.Detail = step3Evidence
@@ -154,7 +154,7 @@ type prmResult struct {
 	Resource             string
 }
 
-func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry) (string, []finding, string, bool, error) {
+func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, []finding, string, bool, error) {
 	req, err := http.NewRequest(http.MethodGet, config.Target, nil)
 	if err != nil {
 		return "", nil, "", false, err
@@ -163,7 +163,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry) (stri
 		return "", nil, "", false, err
 	}
 	if config.Verbose {
-		if err := writeVerboseRequest(io.Discard, req); err != nil {
+		if err := writeVerboseRequest(stdout, req); err != nil {
 			return "", nil, "", false, err
 		}
 	}
@@ -173,6 +173,12 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry) (stri
 	}
 	defer resp.Body.Close()
 	_, _ = drainBody(&resp.Body)
+
+	if config.Verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			return "", nil, "", false, err
+		}
+	}
 
 	addTrace(trace, req, resp)
 
@@ -187,7 +193,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry) (stri
 	return resourceMetadata, nil, "401 with resource_metadata", true, nil
 }
 
-func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, trace *[]traceEntry) (prmResult, []finding, string, error) {
+func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
 	parsedTarget, err := url.Parse(config.Target)
 	if err != nil {
 		return prmResult{}, nil, "", fmt.Errorf("invalid mcp url: %w", err)
@@ -214,7 +220,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	var bestPRM prmResult
 	pathSuffixMissing := false
 	for _, candidate := range candidates {
-		resp, payload, err := fetchJSON(client, config, candidate.URL, trace)
+		resp, payload, err := fetchJSON(client, config, candidate.URL, trace, stdout)
 		if err != nil {
 			if candidate.Source == "path-suffix" {
 				pathSuffixMissing = true
@@ -291,7 +297,7 @@ type prmCandidate struct {
 	Source string
 }
 
-func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []string, trace *[]traceEntry) ([]finding, string) {
+func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
 	findings := []finding{}
 	var evidence strings.Builder
 	for _, issuer := range issuers {
@@ -305,7 +311,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []s
 			}
 		}
 		metadataURL := buildMetadataURL(issuer)
-		resp, payload, err := fetchJSON(client, config, metadataURL, trace)
+		resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout)
 		if err != nil {
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_UNREACHABLE", fmt.Sprintf("%s fetch error: %v", issuer, err)))
 			continue
@@ -332,13 +338,18 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []s
 	return findings, strings.TrimSpace(evidence.String())
 }
 
-func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry) (*http.Response, any, error) {
+func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, any, error) {
 	req, err := http.NewRequest(http.MethodGet, target, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := applyHeaders(req, config.Headers); err != nil {
 		return nil, nil, err
+	}
+	if config.Verbose {
+		if err := writeVerboseRequest(stdout, req); err != nil {
+			return nil, nil, err
+		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -350,6 +361,11 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 		return resp, nil, err
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
+	if config.Verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			return resp, nil, err
+		}
+	}
 	addTrace(trace, req, resp)
 
 	var payload any
