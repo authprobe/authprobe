@@ -213,7 +213,37 @@ func buildWellKnownURLs(mcpURL string) ([]string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid mcp url: %q", mcpURL)
 	}
-	return []string{parsed.String()}, nil
+	addUnique := func(urls []string, value string) []string {
+		for _, existing := range urls {
+			if existing == value {
+				return urls
+			}
+		}
+		return append(urls, value)
+	}
+	wellKnown := []string{}
+	root := (&url.URL{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+		Path:   "/.well-known/oauth-protected-resource",
+	}).String()
+	wellKnown = addUnique(wellKnown, root)
+	wellKnown = addUnique(wellKnown, root+"/mcp")
+	escapedPath := parsed.EscapedPath()
+	if escapedPath == "" {
+		escapedPath = "/"
+	}
+	trimmedPath := strings.TrimSuffix(escapedPath, "/")
+	if trimmedPath != "" && trimmedPath != "/" {
+		basePath := (&url.URL{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   "/.well-known/oauth-protected-resource" + trimmedPath,
+		}).String()
+		wellKnown = addUnique(wellKnown, basePath)
+		wellKnown = addUnique(wellKnown, basePath+"/mcp")
+	}
+	return wellKnown, nil
 }
 
 func parseHeader(raw string) (string, string, error) {
