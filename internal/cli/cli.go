@@ -228,7 +228,6 @@ func buildWellKnownURLs(mcpURL string) ([]string, error) {
 		Path:   "/.well-known/oauth-protected-resource",
 	}).String()
 	wellKnown = addUnique(wellKnown, root)
-	wellKnown = addUnique(wellKnown, root+"/mcp")
 	escapedPath := parsed.EscapedPath()
 	if escapedPath == "" {
 		escapedPath = "/"
@@ -241,7 +240,6 @@ func buildWellKnownURLs(mcpURL string) ([]string, error) {
 			Path:   "/.well-known/oauth-protected-resource" + trimmedPath,
 		}).String()
 		wellKnown = addUnique(wellKnown, basePath)
-		wellKnown = addUnique(wellKnown, basePath+"/mcp")
 	}
 	return wellKnown, nil
 }
