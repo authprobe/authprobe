@@ -24,6 +24,14 @@ FLAGS:
                            Connection timeout in seconds. Default: 10
       --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
 
+      --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+
+      --allow-private-issuers
+                           Allow fetching authorization server metadata from private/loopback/link-local issuers.
+                           (Use only in trusted networks.)
+
       --insecure           Allow invalid TLS certificates (dev only).
       --no-follow-redirects
                            Do not follow HTTP redirects.
@@ -48,6 +56,7 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
+  authprobe scan https://mcp.example.com/mcp --rfc9728 strict
 `
 
 const matrixHelp = `authprobe matrix: Run scans across client profiles and compare findings.
