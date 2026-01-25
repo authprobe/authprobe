@@ -106,6 +106,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	if !authRequired {
 		steps = append(steps, scanStep{ID: 2, Name: "PRM fetch matrix", Status: "SKIP", Detail: "auth not required"})
 		steps = append(steps, scanStep{ID: 3, Name: "Auth server metadata", Status: "SKIP", Detail: "auth not required"})
+		steps = append(steps, scanStep{ID: 4, Name: "Token endpoint readiness (heuristics)", Status: "SKIP", Detail: "auth not required"})
 		report.Steps = steps
 		report.Findings = findings
 		report.PrimaryFinding = choosePrimaryFinding(findings)
@@ -134,16 +135,30 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps = append(steps, step2)
 
 	step3 := scanStep{ID: 3, Name: "Auth server metadata"}
+	authMetadata := authServerMetadataResult{}
 	if len(prmResult.AuthorizationServers) == 0 {
 		step3.Status = "SKIP"
 		step3.Detail = "no authorization_servers in PRM"
 	} else {
-		step3Findings, step3Evidence := fetchAuthServerMetadata(client, config, prmResult.AuthorizationServers, &trace, stdout)
+		step3Findings, step3Evidence, metadata := fetchAuthServerMetadata(client, config, prmResult.AuthorizationServers, &trace, stdout)
+		authMetadata = metadata
 		findings = append(findings, step3Findings...)
 		step3.Status = statusFromFindings(step3Findings, true)
 		step3.Detail = step3Evidence
 	}
 	steps = append(steps, step3)
+
+	step4 := scanStep{ID: 4, Name: "Token endpoint readiness (heuristics)"}
+	if len(authMetadata.TokenEndpoints) == 0 {
+		step4.Status = "SKIP"
+		step4.Detail = "no token_endpoint in metadata"
+	} else {
+		step4Findings, step4Evidence := probeTokenEndpointReadiness(client, config, authMetadata.TokenEndpoints, &trace, stdout)
+		findings = append(findings, step4Findings...)
+		step4.Status = statusFromFindings(step4Findings, true)
+		step4.Detail = step4Evidence
+	}
+	steps = append(steps, step4)
 
 	report.Steps = steps
 	report.Findings = findings
@@ -309,9 +324,14 @@ type prmCandidate struct {
 	Source string
 }
 
-func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
+type authServerMetadataResult struct {
+	TokenEndpoints []string
+}
+
+func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string, authServerMetadataResult) {
 	findings := []finding{}
 	var evidence strings.Builder
+	result := authServerMetadataResult{}
 	for _, issuer := range issuers {
 		if issuer == "" {
 			continue
@@ -342,12 +362,14 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, issuers []s
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing authorization_endpoint", issuer)))
 			continue
 		}
-		if _, ok := obj["token_endpoint"].(string); !ok {
+		tokenEndpoint, ok := obj["token_endpoint"].(string)
+		if !ok || tokenEndpoint == "" {
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing token_endpoint", issuer)))
 			continue
 		}
+		result.TokenEndpoints = append(result.TokenEndpoints, tokenEndpoint)
 	}
-	return findings, strings.TrimSpace(evidence.String())
+	return findings, strings.TrimSpace(evidence.String()), result
 }
 
 func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, any, error) {
@@ -387,6 +409,112 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 		}
 	}
 	return resp, payload, nil
+}
+
+func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEndpoints []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
+	findings := []finding{}
+	var evidence strings.Builder
+	for _, endpoint := range tokenEndpoints {
+		if endpoint == "" {
+			continue
+		}
+		resp, body, err := postTokenProbe(client, config, endpoint, trace, stdout)
+		if err != nil {
+			fmt.Fprintf(&evidence, "%s -> error: %v\n", endpoint, err)
+			continue
+		}
+		fmt.Fprintf(&evidence, "%s -> %d\n", endpoint, resp.StatusCode)
+
+		contentType := resp.Header.Get("Content-Type")
+		payload, parseErr := parseJSONBody(body)
+		if !isJSONContentType(contentType) || parseErr != nil {
+			findings = append(findings, newFinding("TOKEN_RESPONSE_NOT_JSON_RISK", fmt.Sprintf("token content-type %q", contentType)))
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			if payloadMap, ok := payload.(map[string]any); ok {
+				if _, ok := payloadMap["error"]; ok {
+					findings = append(findings, newFinding("TOKEN_HTTP200_ERROR_PAYLOAD_RISK", "token response 200 with error payload"))
+				}
+			}
+		}
+	}
+	return findings, strings.TrimSpace(evidence.String())
+}
+
+func postTokenProbe(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, error) {
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", "invalid")
+	form.Set("redirect_uri", "https://invalid.example/callback")
+	form.Set("client_id", "authprobe")
+
+	req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	if err := applySafeHeaders(req, config.Headers); err != nil {
+		return nil, nil, err
+	}
+	if config.Verbose {
+		if err := writeVerboseRequest(stdout, req); err != nil {
+			return nil, nil, err
+		}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	if config.Verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			return resp, body, err
+		}
+	}
+	addTrace(trace, req, resp)
+	return resp, body, nil
+}
+
+func applySafeHeaders(req *http.Request, headers []string) error {
+	for _, header := range headers {
+		key, value, err := parseHeader(header)
+		if err != nil {
+			return err
+		}
+		lower := strings.ToLower(key)
+		switch lower {
+		case "authorization", "cookie", "proxy-authorization":
+			continue
+		case "host":
+			req.Host = value
+			continue
+		}
+		req.Header.Add(key, value)
+	}
+	return nil
+}
+
+func parseJSONBody(body []byte) (any, error) {
+	if len(body) == 0 {
+		return nil, errors.New("empty body")
+	}
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func isJSONContentType(contentType string) bool {
+	lower := strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(lower, "application/json") || strings.Contains(lower, "+json")
 }
 
 func applyHeaders(req *http.Request, headers []string) error {
@@ -532,7 +660,9 @@ func findingSeverity(code string) string {
 		"AUTH_SERVER_METADATA_INVALID":
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
-		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
+		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
+		"TOKEN_RESPONSE_NOT_JSON_RISK",
+		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
 		return "medium"
 	default:
 		return "low"
@@ -545,6 +675,9 @@ func findingConfidence(code string) float64 {
 		return 0.92
 	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
 		return 0.85
+	case "TOKEN_RESPONSE_NOT_JSON_RISK",
+		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
+		return 0.7
 	default:
 		return 1.00
 	}
@@ -654,6 +787,10 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 			fmt.Fprintf(&out, "- metadata: %s\n", metadataURL)
 		}
 	}
+
+	fmt.Fprintln(&out, "\n4) Token endpoint readiness (heuristics)")
+	fmt.Fprintln(&out, "- AuthProbe sends a safe, invalid grant request to the token endpoint to observe error response behavior.")
+	fmt.Fprintln(&out, "- It flags non-JSON responses or HTTP 200 responses that still contain error payloads.")
 
 	return out.String()
 }
