@@ -88,6 +88,7 @@ Common flags:
 - `--proxy http://127.0.0.1:8080`
 - `--fail-on none|low|medium|high`
 - `--verbose` (print request/response headers + bodies during scan)
+- `--explain` (print RFC 9728 rationale for each scan step)
 - Outputs: `--md`, `--json`, `--sarif`, `--bundle`
 
 Examples:
