@@ -649,7 +649,9 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 	} else {
 		fmt.Fprintln(&out, "- For each issuer, AuthProbe fetches <issuer>/.well-known/oauth-authorization-server (RFC 8414).")
 		for _, issuer := range prmResult.AuthorizationServers {
+			metadataURL := buildMetadataURL(issuer)
 			fmt.Fprintf(&out, "- issuer: %s\n", issuer)
+			fmt.Fprintf(&out, "- metadata: %s\n", metadataURL)
 		}
 	}
 
