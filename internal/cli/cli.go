@@ -179,56 +179,6 @@ func isHelp(arg string) bool {
 	return arg == "-h" || arg == "--help"
 }
 
-func normalizeScanArgs(args []string) []string {
-	flagsWithValue := map[string]bool{
-		"--profile":         true,
-		"-p":                true,
-		"--header":          true,
-		"-H":                true,
-		"--proxy":           true,
-		"--timeout":         true,
-		"--connect-timeout": true,
-		"--retries":         true,
-		"--fail-on":         true,
-		"--json":            true,
-		"--md":              true,
-		"--sarif":           true,
-		"--bundle":          true,
-		"--output-dir":      true,
-		"--rfc9728":         true,
-	}
-	boolFlags := map[string]bool{
-		"--allow-private-issuers": true,
-		"--insecure":              true,
-		"--no-follow-redirects":   true,
-		"--verbose":               true,
-		"--no-redact":             true,
-	}
-
-	var flagArgs []string
-	var positionals []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "--" {
-			positionals = append(positionals, args[i+1:]...)
-			break
-		}
-		if strings.HasPrefix(arg, "-") {
-			if strings.Contains(arg, "=") || boolFlags[arg] {
-				flagArgs = append(flagArgs, arg)
-				continue
-			}
-			if flagsWithValue[arg] && i+1 < len(args) {
-				flagArgs = append(flagArgs, arg, args[i+1])
-				i++
-				continue
-			}
-		}
-		positionals = append(positionals, arg)
-	}
-	return append(flagArgs, positionals...)
-}
-
 func parseHeader(raw string) (string, string, error) {
 	parts := strings.SplitN(raw, ":", 2)
 	if len(parts) != 2 {
