@@ -17,6 +17,7 @@ Remote MCP servers + OAuth fail for boring reasons:
 - auth server metadata is inconsistent
 - token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload)
 - different clients follow different discovery flows
+- Verify [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728/)
 
 AuthProbe turns that chaos into a 1-page diagnosis with evidence and a concrete fix path.
 
