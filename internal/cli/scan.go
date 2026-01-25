@@ -155,18 +155,22 @@ type prmResult struct {
 }
 
 func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, []finding, string, bool, error) {
+	// Create a GET request to the target MCP endpoint
 	req, err := http.NewRequest(http.MethodGet, config.Target, nil)
 	if err != nil {
 		return "", nil, "", false, err
 	}
+	// Apply any custom headers specified by the user
 	if err := applyHeaders(req, config.Headers); err != nil {
 		return "", nil, "", false, err
 	}
+	// If verbose mode is enabled, write the request details to stdout
 	if config.Verbose {
 		if err := writeVerboseRequest(stdout, req); err != nil {
 			return "", nil, "", false, err
 		}
 	}
+	// Execute the HTTP request
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, "", false, err
@@ -180,6 +184,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 		}
 	}
 
+	// Add this request/response pair to the trace for later analysis
 	addTrace(trace, req, resp)
 
 	if resp.StatusCode != http.StatusUnauthorized {
@@ -191,8 +196,10 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 
 	resourceMetadata, ok := extractResourceMetadata(resp.Header.Values("WWW-Authenticate"))
 	if !ok {
+		// Missing resource_metadata is a finding - the server requires auth but doesn't provide discovery info
 		return "", []finding{newFinding("DISCOVERY_NO_WWW_AUTHENTICATE", "missing resource_metadata in WWW-Authenticate")}, "missing WWW-Authenticate/resource_metadata", true, nil
 	}
+	// Success: we have a 401 with resource_metadata, indicating proper MCP OAuth discovery
 	return resourceMetadata, nil, "401 with resource_metadata", true, nil
 }
 
