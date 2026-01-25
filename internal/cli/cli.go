@@ -222,12 +222,6 @@ func buildWellKnownURLs(mcpURL string) ([]string, error) {
 		return append(urls, value)
 	}
 	wellKnown := []string{}
-	root := (&url.URL{
-		Scheme: parsed.Scheme,
-		Host:   parsed.Host,
-		Path:   "/.well-known/oauth-protected-resource",
-	}).String()
-	wellKnown = addUnique(wellKnown, root)
 	escapedPath := parsed.EscapedPath()
 	if escapedPath == "" {
 		escapedPath = "/"
