@@ -183,6 +183,9 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	addTrace(trace, req, resp)
 
 	if resp.StatusCode != http.StatusUnauthorized {
+		if resp.StatusCode == http.StatusMethodNotAllowed {
+			return "", nil, fmt.Sprintf("probe returned %d; continuing discovery", resp.StatusCode), true, nil
+		}
 		return "", nil, "auth not required", false, nil
 	}
 
