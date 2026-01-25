@@ -51,7 +51,7 @@ AuthProbe should validate **OAuth Protected Resource Metadata** behavior per RFC
 - Managed SaaS scanner  
 - Provider-specific deep integrations (Okta/Entra/Keycloak packs)
 
-These are Phase 2+ after CLI adoption.
+These are Phase 2+ .
 
 ---
 
