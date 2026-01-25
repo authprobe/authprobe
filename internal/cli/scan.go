@@ -224,45 +224,45 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	if pathSuffix != "" {
 		candidates = append(candidates, prmCandidate{URL: pathSuffix, Source: "path-suffix"})
 	}
+	hasPathSuffix := pathSuffix != ""
 
 	findings := []finding{}
 	var evidence strings.Builder
 	var bestPRM prmResult
-	pathSuffixMissing := false
 	for _, candidate := range candidates {
+		reportFindings := config.RFC9728Mode != "off"
+		if hasPathSuffix {
+			reportFindings = candidate.Source == "path-suffix"
+		}
 		resp, payload, err := fetchJSON(client, config, candidate.URL, trace, stdout)
 		if err != nil {
-			if candidate.Source == "path-suffix" {
-				pathSuffixMissing = true
-			}
-			if config.RFC9728Mode != "off" {
+			if reportFindings {
 				findings = append(findings, newFinding("PRM_HTTP_STATUS_NOT_200", fmt.Sprintf("%s fetch error: %v", candidate.Source, err)))
 			}
 			continue
 		}
 		status := resp.StatusCode
 		fmt.Fprintf(&evidence, "%s -> %d\n", candidate.URL, status)
-		if status == http.StatusNotFound && candidate.Source == "root" {
+		if status == http.StatusNotFound && candidate.Source == "root" && !hasPathSuffix {
 			findings = append(findings, newFinding("DISCOVERY_ROOT_WELLKNOWN_404", "root PRM endpoint returned 404"))
 		}
-		if candidate.Source == "path-suffix" && status == http.StatusNotFound {
-			pathSuffixMissing = true
-		}
-		if status != http.StatusOK && config.RFC9728Mode != "off" {
+		if status != http.StatusOK && reportFindings {
 			findings = append(findings, newFinding("PRM_HTTP_STATUS_NOT_200", fmt.Sprintf("%s status %d", candidate.Source, status)))
 			continue
 		}
 		if status != http.StatusOK {
 			continue
 		}
-		contentType := resp.Header.Get("Content-Type")
-		if config.RFC9728Mode != "off" && !strings.HasPrefix(contentType, "application/json") {
-			findings = append(findings, newFinding("PRM_CONTENT_TYPE_NOT_JSON", fmt.Sprintf("%s content-type %q", candidate.Source, contentType)))
-			continue
+		if reportFindings && !hasPathSuffix {
+			contentType := resp.Header.Get("Content-Type")
+			if !strings.HasPrefix(contentType, "application/json") {
+				findings = append(findings, newFinding("PRM_CONTENT_TYPE_NOT_JSON", fmt.Sprintf("%s content-type %q", candidate.Source, contentType)))
+				continue
+			}
 		}
 		obj, ok := payload.(map[string]any)
 		if !ok {
-			if config.RFC9728Mode != "off" {
+			if reportFindings {
 				findings = append(findings, newFinding("PRM_NOT_JSON_OBJECT", fmt.Sprintf("%s response not JSON object", candidate.Source)))
 			}
 			continue
@@ -270,14 +270,20 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		prm := prmResult{}
 		if resourceValue, ok := obj["resource"].(string); ok {
 			prm.Resource = resourceValue
-			if config.RFC9728Mode != "off" && resourceValue == "" {
+			if reportFindings && !hasPathSuffix && resourceValue == "" {
 				findings = append(findings, newFinding("PRM_RESOURCE_MISSING", fmt.Sprintf("%s resource empty", candidate.Source)))
 			}
-		} else if config.RFC9728Mode != "off" {
+		} else if reportFindings && !hasPathSuffix {
 			findings = append(findings, newFinding("PRM_RESOURCE_MISSING", fmt.Sprintf("%s resource missing", candidate.Source)))
 		}
-		if prm.Resource != "" && prm.Resource != config.Target {
-			findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, config.Target)))
+		if reportFindings {
+			if hasPathSuffix {
+				if prm.Resource != config.Target {
+					findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, config.Target)))
+				}
+			} else if prm.Resource != "" && prm.Resource != config.Target {
+				findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, config.Target)))
+			}
 		}
 		if servers, ok := obj["authorization_servers"].([]any); ok {
 			for _, entry := range servers {
@@ -286,17 +292,17 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 				}
 			}
 		}
-		if len(prm.AuthorizationServers) == 0 {
+		if len(prm.AuthorizationServers) == 0 && reportFindings && !hasPathSuffix {
 			findings = append(findings, newFinding("PRM_MISSING_AUTHORIZATION_SERVERS", fmt.Sprintf("%s authorization_servers missing", candidate.Source)))
 		}
 
-		if bestPRM.AuthorizationServers == nil && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
+		if hasPathSuffix {
+			if candidate.Source == "path-suffix" && prm.Resource == config.Target {
+				bestPRM = prm
+			}
+		} else if bestPRM.AuthorizationServers == nil && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
 			bestPRM = prm
 		}
-	}
-
-	if pathSuffix != "" && pathSuffixMissing && config.RFC9728Mode != "off" {
-		findings = append(findings, newFinding("PRM_WELLKNOWN_PATH_SUFFIX_MISSING", "path-suffix PRM endpoint missing"))
 	}
 
 	return bestPRM, findings, strings.TrimSpace(evidence.String()), nil
