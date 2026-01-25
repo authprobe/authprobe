@@ -1,0 +1,10 @@
+GET https://compute.googleapis.com/.well-known/oauth-protected-resource -> 404 Not Found (https://datatracker.ietf.org/doc/html/rfc9728#section-3.1)
+> GET /.well-known/oauth-protected-resource/mcp HTTP/1.1
+> Host: compute.googleapis.com
+>
+> (empty body)
+< HTTP/2.0 200 OK
+< Alt-Svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000                                                                                                                                                                     < Content-Type: application/json; charset=UTF-8                                                                                                                                                                               < Date: Sun, 25 Jan 2026 01:53:43 GMT                                                                                                                                                                                         < Server: ESF                                                                                                                                                                                                                 < X-Content-Type-Options: nosniff                                                                                                                                                                                             < X-Frame-Options: SAMEORIGIN
+< X-Xss-Protection: 0
+<
+< {"authorization_servers":["https://accounts.google.com/"],"bearer_methods_supported":["header"],"resource":"https://compute.googleapis.com/mcp","scopes_supported":["https://www.googleapis.com/auth/compute"]}
