@@ -50,6 +50,7 @@ OUTPUTS:
 DIAGNOSTICS:
       --verbose            Verbose logs (includes request/response headers + bodies; still redacted).
       --no-redact          Disable redaction (NOT recommended; for local debugging only).
+      --explain            Print an RFC 9728 rationale for each scan step.
 
 EXAMPLES:
   authprobe scan https://mcp.example.com/mcp

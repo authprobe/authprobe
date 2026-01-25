@@ -24,6 +24,7 @@ type scanConfig struct {
 	Headers             []string
 	Timeout             time.Duration
 	Verbose             bool
+	Explain             bool
 	FailOn              string
 	RFC9728Mode         string
 	AllowPrivateIssuers bool
@@ -109,6 +110,12 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 		report.Findings = findings
 		report.PrimaryFinding = choosePrimaryFinding(findings)
 		summary := buildSummary(report)
+		if config.Explain {
+			explanation := buildScanExplanation(config, resourceMetadata, prmResult{}, authRequired)
+			if explanation != "" {
+				summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+			}
+		}
 		summary.Trace = trace
 		if _, err := stdout.Write([]byte(summary.Stdout)); err != nil {
 			return report, scanSummary{}, err
@@ -142,6 +149,12 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	report.Findings = findings
 	report.PrimaryFinding = choosePrimaryFinding(findings)
 	summary := buildSummary(report)
+	if config.Explain {
+		explanation := buildScanExplanation(config, resourceMetadata, prmResult, authRequired)
+		if explanation != "" {
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+		}
+	}
 	summary.Trace = trace
 	if _, err := stdout.Write([]byte(summary.Stdout)); err != nil {
 		return report, scanSummary{}, err
@@ -204,27 +217,10 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 }
 
 func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
-	parsedTarget, err := url.Parse(config.Target)
+	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
-		return prmResult{}, nil, "", fmt.Errorf("invalid mcp url: %w", err)
+		return prmResult{}, nil, "", err
 	}
-
-	candidates := []prmCandidate{}
-	if resourceMetadata != "" {
-		rmURL, err := resolveURL(parsedTarget, resourceMetadata)
-		if err == nil {
-			candidates = append(candidates, prmCandidate{URL: rmURL.String(), Source: "resource_metadata"})
-		}
-	}
-
-	rootURL := parsedTarget.ResolveReference(&url.URL{Path: "/.well-known/oauth-protected-resource"})
-	candidates = append(candidates, prmCandidate{URL: rootURL.String(), Source: "root"})
-
-	pathSuffix := buildPathSuffixCandidate(parsedTarget)
-	if pathSuffix != "" {
-		candidates = append(candidates, prmCandidate{URL: pathSuffix, Source: "path-suffix"})
-	}
-	hasPathSuffix := pathSuffix != ""
 
 	findings := []finding{}
 	var evidence strings.Builder
@@ -415,6 +411,30 @@ func resolveURL(base *url.URL, ref string) (*url.URL, error) {
 	return base.ResolveReference(parsed), nil
 }
 
+func buildPRMCandidates(target string, resourceMetadata string) ([]prmCandidate, bool, error) {
+	parsedTarget, err := url.Parse(target)
+	if err != nil {
+		return nil, false, fmt.Errorf("invalid mcp url: %w", err)
+	}
+
+	candidates := []prmCandidate{}
+	if resourceMetadata != "" {
+		rmURL, err := resolveURL(parsedTarget, resourceMetadata)
+		if err == nil {
+			candidates = append(candidates, prmCandidate{URL: rmURL.String(), Source: "resource_metadata"})
+		}
+	}
+
+	rootURL := parsedTarget.ResolveReference(&url.URL{Path: "/.well-known/oauth-protected-resource"})
+	candidates = append(candidates, prmCandidate{URL: rootURL.String(), Source: "root"})
+
+	pathSuffix := buildPathSuffixCandidate(parsedTarget)
+	if pathSuffix != "" {
+		candidates = append(candidates, prmCandidate{URL: pathSuffix, Source: "path-suffix"})
+	}
+	return candidates, pathSuffix != "", nil
+}
+
 func buildPathSuffixCandidate(target *url.URL) string {
 	path := target.EscapedPath()
 	if path == "" || path == "/" {
@@ -587,6 +607,53 @@ func buildSummary(report scanReport) scanSummary {
 	jsonBytes, _ := json.MarshalIndent(report, "", "  ")
 
 	return scanSummary{Stdout: stdout, MD: md, JSON: jsonBytes}
+}
+
+func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult prmResult, authRequired bool) string {
+	var out strings.Builder
+	fmt.Fprintln(&out, "Explain (RFC 9728 rationale)")
+	if !authRequired {
+		fmt.Fprintln(&out, "1) MCP probe")
+		fmt.Fprintln(&out, "- AuthProbe did not receive a 401 response that indicates authentication is required, so RFC 9728 PRM discovery is skipped.")
+		return out.String()
+	}
+
+	fmt.Fprintln(&out, "1) MCP probe")
+	fmt.Fprintf(&out, "- AuthProbe sends an unauthenticated GET to %s.\n", config.Target)
+	fmt.Fprintln(&out, "- RFC 9728 discovery hinges on a 401 with WWW-Authenticate that includes resource_metadata.")
+	if resourceMetadata != "" {
+		fmt.Fprintf(&out, "- resource_metadata hint: %s\n", resourceMetadata)
+	} else {
+		fmt.Fprintln(&out, "- resource_metadata hint: (none)")
+	}
+
+	fmt.Fprintln(&out, "\n2) Protected Resource Metadata (PRM) discovery")
+	fmt.Fprintln(&out, "- RFC 9728 defines PRM URLs by inserting /.well-known/oauth-protected-resource between the host and path.")
+	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
+	if err != nil {
+		fmt.Fprintf(&out, "- Unable to build PRM candidates: %v\n", err)
+	} else {
+		for _, candidate := range candidates {
+			fmt.Fprintf(&out, "- %s (%s)\n", candidate.URL, candidate.Source)
+		}
+		if hasPathSuffix {
+			fmt.Fprintln(&out, "- Because the resource has a path, the path-suffix PRM endpoint is required by RFC 9728.")
+		}
+	}
+	fmt.Fprintln(&out, "- PRM responses must be JSON objects with a resource that exactly matches the target URL.")
+	fmt.Fprintln(&out, "- authorization_servers is required for OAuth discovery; it lists issuer URLs.")
+
+	fmt.Fprintln(&out, "\n3) Authorization server metadata")
+	if len(prmResult.AuthorizationServers) == 0 {
+		fmt.Fprintln(&out, "- No authorization_servers found in PRM, so AuthProbe skips metadata fetches.")
+	} else {
+		fmt.Fprintln(&out, "- For each issuer, AuthProbe fetches <issuer>/.well-known/oauth-authorization-server (RFC 8414).")
+		for _, issuer := range prmResult.AuthorizationServers {
+			fmt.Fprintf(&out, "- issuer: %s\n", issuer)
+		}
+	}
+
+	return out.String()
 }
 
 func renderMarkdown(report scanReport) string {

@@ -71,6 +71,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.String("output-dir", "", "")
 	verbose := fs.Bool("verbose", false, "")
 	fs.Bool("no-redact", false, "")
+	explain := fs.Bool("explain", false, "")
 
 	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -89,6 +90,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Headers:             headers,
 		Timeout:             time.Duration(*timeout) * time.Second,
 		Verbose:             *verbose,
+		Explain:             *explain,
 		FailOn:              fs.Lookup("fail-on").Value.String(),
 		RFC9728Mode:         fs.Lookup("rfc9728").Value.String(),
 		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
