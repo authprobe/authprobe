@@ -73,6 +73,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	verbose := fs.Bool("verbose", false, "")
 	fs.Bool("no-redact", false, "")
 	explain := fs.Bool("explain", false, "")
+	showTrace := fs.Bool("show-trace", false, "")
 	toolList := fs.Bool("tool-list", false, "")
 	toolDetail := fs.String("tool-detail", "", "")
 
@@ -94,6 +95,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Timeout:             time.Duration(*timeout) * time.Second,
 		Verbose:             *verbose,
 		Explain:             *explain,
+		ShowTrace:           *showTrace,
 		FailOn:              fs.Lookup("fail-on").Value.String(),
 		RFC9728Mode:         fs.Lookup("rfc9728").Value.String(),
 		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
