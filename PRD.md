@@ -433,7 +433,43 @@ FLAGS:
                            Connection timeout in seconds. Default: 10
       --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
 
-      --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
+  --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc3986 <mode>     RFC 3986 URI parsing + HTTPS checks for metadata URLs.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc8414 <mode>     RFC 8414 authorization server metadata checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc8707 <mode>     RFC 8707 resource indicator checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc9207 <mode>     RFC 9207 issuer identification checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc6750 <mode>     RFC 6750 bearer token method checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc7517 <mode>     RFC 7517 JWKS shape validation checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc7519 <mode>     RFC 7519 JWT claim validation checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc7636 <mode>     RFC 7636 PKCE posture checks.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc6749 <mode>     RFC 6749 OAuth endpoint behavior probes.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc1918 <mode>     RFC 1918 private-range SSRF protections.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc6890 <mode>     RFC 6890 special-purpose range SSRF protections.
+                           Options: off, best-effort, strict
+                           Default: best-effort
+      --rfc9110 <mode>     RFC 9110 redirect handling checks for metadata fetches.
                            Options: off, best-effort, strict
                            Default: best-effort
 
@@ -567,3 +603,126 @@ A golden Markdown report must include:
 - verify command(s)
 
 (Use the golden example from the design discussion as the fixture reference.)
+
+---
+
+## Appendix C — OAuth Metadata URL Verification (RFC-driven)
+
+**Version:** 0.1  
+**Last updated:** January 26, 2026
+
+### Problem statement
+
+When a client consumes **Protected Resource Metadata (RS)** and **Authorization Server Metadata (AS)**, it receives a cluster of URLs it may later call (`authorization_endpoint`, `token_endpoint`, `jwks_uri`, etc.). If these URLs are accepted without verification, the client is exposed to **impersonation**, **mix-up**, and **SSRF** risk. This appendix defines a compact set of **RFC-backed semantic verification checks** to convert discovered URLs into trustworthy runtime configuration (and to keep “random strings from the internet” from becoming production traffic routers).
+
+### Goals
+
+- Provide deterministic, spec-aligned validation for RS metadata (**RFC 9728**) and AS metadata (**RFC 8414**), including **issuer/resource binding** rules.
+- Harden any metadata-driven HTTP fetch against **SSRF** and misrouting while staying compatible with real-world providers (including legitimate **cross-host endpoints**).
+- Produce a machine-readable validation report per discovered URL/field with **Fail / Warn / Info** outcomes.
+
+### Non-goals
+
+- Proving business ownership of a domain beyond standard TLS validation.
+- Blocking cross-host endpoints by default (many large providers legitimately use different hosts).
+- Performing high-risk active tests that require real client credentials or user interaction.
+
+### Inputs and artifacts
+
+- RS metadata from `/.well-known/oauth-protected-resource` (**RFC 9728**)
+- AS metadata from `/.well-known/oauth-authorization-server` (**RFC 8414**)
+- Optional: authorization responses including `iss` parameter (**RFC 9207**)
+- Optional: JWT-based tokens requiring JWKS + claim validation (**RFC 7517 / RFC 7519**)
+
+### Example (motivating edge case)
+
+A common real-world mismatch is a trailing slash in a discovered issuer identifier:
+
+- RS metadata lists: `https://accounts.google.com/`
+- AS metadata returns: `issuer: https://accounts.google.com`
+
+**RFC 8414** defines how to construct the well-known URL (including removing a terminating slash in specific cases) and requires strict issuer equality after retrieval.
+
+**Issuer and resource comparisons MUST use code-point equality with no Unicode normalization.**
+
+### Normative references (RFCs)
+
+| RFC | What we use it for | Link |
+|---|---|---|
+| RFC 9728 | OAuth 2.0 Protected Resource Metadata (RS metadata, SSRF, string operations) | `https://www.rfc-editor.org/rfc/rfc9728` |
+| RFC 8414 | OAuth 2.0 Authorization Server Metadata (AS discovery, issuer binding, string ops) | `https://www.rfc-editor.org/rfc/rfc8414.html` |
+| RFC 9207 | OAuth 2.0 Authorization Server Issuer Identification (`iss` parameter; mix-up defense) | `https://datatracker.ietf.org/doc/html/rfc9207` |
+| RFC 8707 | Resource Indicators for OAuth 2.0 (`resource` parameter; audience restriction posture) | `https://datatracker.ietf.org/doc/html/rfc8707` |
+| RFC 6750 | Bearer Token Usage (Authorization header; query/body caveats) | `https://datatracker.ietf.org/doc/html/rfc6750` |
+| RFC 7636 | PKCE (S256 preferred; mitigates code interception) | `https://datatracker.ietf.org/doc/html/rfc7636` |
+| RFC 7517 | JSON Web Key (JWK) / JWK Set (`jwks_uri`; keys array) | `https://datatracker.ietf.org/doc/html/rfc7517` |
+| RFC 7519 | JSON Web Token (JWT) (`aud`/`exp` semantics when tokens are JWTs) | `https://datatracker.ietf.org/doc/html/rfc7519` |
+| RFC 3986 | URI Generic Syntax (parsing; components; absolute URI rules) | `https://datatracker.ietf.org/doc/html/rfc3986` |
+| RFC 1918 | Private IPv4 address ranges (SSRF blocking input) | `https://datatracker.ietf.org/doc/html/rfc1918` |
+| RFC 6890 | Special-Purpose Address Registries (loopback, link-local, etc.) | `https://datatracker.ietf.org/doc/html/rfc6890` |
+| RFC 9110 | HTTP Semantics (redirect handling; Location header) | `https://www.rfc-editor.org/rfc/rfc9110.html` |
+| RFC 6749 | The OAuth 2.0 Authorization Framework (baseline endpoint + error model) | `https://datatracker.ietf.org/doc/html/rfc6749` |
+
+### Verification cases
+
+Each case maps directly to an RFC requirement or an RFC-called-out security consideration.
+
+- **Fail**: hard error; must not proceed.
+- **Warn**: log + surface; proceed allowed.
+- **Info**: optional diagnostics.
+
+#### Fail-fast (MUST) cases
+
+| Case | Applies to | Verification | RFC rationale |
+|---|---|---|---|
+| F-01 | All discovered URLs | Parse per RFC 3986; reject invalid URI syntax. Require absolute HTTPS URLs for issuer identifiers, protected resource identifiers, and any endpoints we will call. | RFC 3986; RFC 8414; RFC 9728 |
+| F-02 | Issuer + resource identifiers | Reject identifiers containing query/fragment where prohibited: issuer MUST have no query/fragment; resource indicators MUST NOT include fragment. | RFC 8414 (issuer); RFC 9207 (iss); RFC 8707 (resource: no fragment) |
+| F-03 | AS well-known URL construction | When forming `/.well-known/oauth-authorization-server`, remove a terminating `/` from an issuer that has a path component before inserting `/.well-known/`. | RFC 8414 §3.1 |
+| F-04 | RS well-known URL construction | When forming `/.well-known/oauth-protected-resource`, remove a terminating `/` following the host before inserting `/.well-known/` when the resource identifier contains a path or query component. | RFC 9728 §3.1 |
+| F-05 | AS metadata response | Require HTTP 200 and `Content-Type: application/json`; JSON must parse to an object. | RFC 8414 §3.2 |
+| F-06 | RS metadata response | Require HTTP 200 and `Content-Type: application/json`; JSON must parse to an object. | RFC 9728 §3.2 |
+| F-07 | Issuer binding (AS metadata) | Require returned `issuer` to be identical to the issuer used to form the metadata URL; otherwise discard metadata. | RFC 8414 §3.3 + §4 |
+| F-08 | Resource binding (RS metadata) | Require returned `resource` to be identical to the resource identifier used to form the metadata URL (or the URL used to call the RS when metadata URL came from `WWW-Authenticate`); otherwise discard metadata. | RFC 9728 §3.3 + §6 |
+| F-09 | String equality rules | All security-relevant comparisons (issuer, resource, `iss`, etc.) use code-point equality; do not apply Unicode normalization. | RFC 8414 §4; RFC 9728 §6; RFC 9207 §2.4 (refers to RFC 3986 string comparison) |
+| F-10 | Network fetch hardening | SSRF defenses for all metadata-driven fetches: block internal/special-purpose IP ranges; protect against DNS rebinding; cap redirects; reject redirects to disallowed targets. | RFC 9728 §7.7; RFC 1918; RFC 6890 |
+| F-11 | TLS requirements | Enforce TLS and validate certificates for all metadata URLs and endpoints; fail closed on TLS errors. | RFC 9728 §7.1; RFC 8414 §6.1 |
+| F-12 | Bearer token transport | Enforce `bearer_methods_supported` from RS metadata. If only `header` is allowed, MUST NOT send token via query or body. Never use more than one bearer method per request. | RFC 9728 (`bearer_methods_supported`); RFC 6750 §2 |
+| F-13 | Redirect handling (metadata fetches) | Follow redirects only for safe GET/HEAD and only to absolute HTTPS `Location` URIs that still pass SSRF policy. | RFC 9110; RFC 9728 §7.7 |
+| F-14 | JWKS (if validating JWTs) | If tokens are JWTs, fetch `jwks_uri` and require a valid JWK Set with `keys` array; reject malformed sets. | RFC 7517 §2 |
+| F-15 | JWT claim checks (if JWTs used) | Validate signature; reject if `aud` (when present) does not include this client/service, and reject if `exp` is in the past. | RFC 7519 §4.1.3 and §4.1.4 |
+| F-16 | Mix-up defense (multi-issuer clients) | If `iss` is present in authorization responses, decode and compare to expected issuer; reject on mismatch. Ensure issuer identifiers are unique across configured ASs. | RFC 9207 §2.4 and §4 |
+
+#### Warn-only (SHOULD) cases
+
+| Case | Applies to | Verification | RFC rationale |
+|---|---|---|---|
+| W-01 | OAuth endpoints vs issuer | Warn if endpoints are on a different host/registrable domain than issuer (common for large providers). Treat as phishing/misrouting signal, not a hard block. | RFC 8414 §6.2 (impersonation risks); RFC 9207 (mix-up context) |
+| W-02 | PKCE posture | Warn if `code_challenge_methods_supported` is missing `S256`. Prefer S256; treat `plain` as legacy. | RFC 7636 (S256 vs plain threat model); RFC 8414 (`code_challenge_methods_supported`) |
+| W-03 | Scopes hygiene | Warn if caller requests scopes not required for the target resource; encourage least-privilege. | RFC 9728 §7.2 |
+| W-04 | Audience restriction posture | Warn if client operates across multiple resources but does not use Resource Indicators to request audience-restricted tokens. | RFC 8707 §2; RFC 9728 §7.4 |
+| W-05 | Protected resources cross-check | If AS metadata includes `protected_resources`, cross-check it against RS metadata for consistency when enumerations are used. | RFC 9728 §4 (protected_resources + cross-check guidance) |
+
+#### Optional (INFO) probes
+
+| Case | Applies to | Verification | RFC rationale |
+|---|---|---|---|
+| I-01 | Endpoint sanity probes | Optional: send non-sensitive, intentionally-invalid requests (e.g., missing params) to check endpoints behave like OAuth endpoints (expect OAuth-style errors, not generic 200 pages). | RFC 6749 (error responses) |
+| I-02 | Metadata caching | Optional: honor HTTP caching headers with bounded TTL to reduce latency and repeated network calls. | RFC 9110 (HTTP semantics) |
+
+### Output format
+
+The validator should emit a per-artifact report with:
+
+1. Field name  
+2. URL value  
+3. Result (**Fail / Warn / Info**)  
+4. Short reason string  
+5. RFC references (one or more)
+
+Downstream tooling can gate execution on **Fail** results.
+
+### Success metrics
+
+- **Zero** acceptance of metadata with issuer/resource mismatch (per RFC 8414 / RFC 9728).
+- SSRF hardening: **no** fetches to internal/special-purpose ranges; **no** redirect-based bypasses.
+- High compatibility: major providers (Google, Microsoft, Okta, etc.) validate without host-coincidence false positives (**Warn-only**).
