@@ -894,14 +894,25 @@ func severityRank(severity string) int {
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
 	fmt.Fprintln(&out, "Funnel")
+	maxLabel := 0
+	maxStatus := 0
 	for _, step := range report.Steps {
 		label := fmt.Sprintf("  [%d] %s", step.ID, step.Name)
-		dots := strings.Repeat(".", max(1, 60-len(label)))
-		status := step.Status
-		if step.Detail != "" {
-			fmt.Fprintf(&out, "%s %s %s (%s)\n", label, dots, status, step.Detail)
-		} else {
-			fmt.Fprintf(&out, "%s %s %s\n", label, dots, status)
+		if len(label) > maxLabel {
+			maxLabel = len(label)
+		}
+		if len(step.Status) > maxStatus {
+			maxStatus = len(step.Status)
+		}
+	}
+	for _, step := range report.Steps {
+		label := fmt.Sprintf("  [%d] %s", step.ID, step.Name)
+		fmt.Fprintf(&out, "%-*s  %-*s\n", maxLabel, label, maxStatus, step.Status)
+		if strings.TrimSpace(step.Detail) != "" {
+			detailLines := summarizeStepDetail(step.Detail, 6, 96-6)
+			for _, line := range detailLines {
+				fmt.Fprintf(&out, "      %s\n", line)
+			}
 		}
 	}
 	if report.PrimaryFinding.Code == "" {
@@ -915,6 +926,83 @@ func buildSummary(report scanReport) scanSummary {
 	jsonBytes, _ := json.MarshalIndent(report, "", "  ")
 
 	return scanSummary{Stdout: stdout, MD: md, JSON: jsonBytes}
+}
+
+func summarizeStepDetail(detail string, maxTools int, maxWidth int) []string {
+	lines := strings.Split(strings.TrimSpace(detail), "\n")
+	var summarized []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		line = summarizeToolsList(line, maxTools)
+		summarized = append(summarized, wrapText(line, maxWidth)...)
+	}
+	if len(summarized) == 0 {
+		return []string{""}
+	}
+	return summarized
+}
+
+func summarizeToolsList(detail string, maxTools int) string {
+	const marker = "tools:"
+	start := strings.Index(detail, marker)
+	if start == -1 {
+		return detail
+	}
+	start += len(marker)
+	rest := detail[start:]
+	end := strings.Index(rest, ")")
+	if end == -1 {
+		return detail
+	}
+	list := strings.TrimSpace(rest[:end])
+	if list == "" {
+		return detail
+	}
+	tools := strings.Split(list, ",")
+	for i := range tools {
+		tools[i] = strings.TrimSpace(tools[i])
+	}
+	if len(tools) <= maxTools {
+		return detail
+	}
+	compact := strings.Join(tools[:maxTools], ", ")
+	compact = fmt.Sprintf("%s, +%d more", compact, len(tools)-maxTools)
+	prefix := strings.TrimRight(detail[:start], " ")
+	suffix := rest[end:]
+	return fmt.Sprintf("%s %s%s", prefix, compact, suffix)
+}
+
+func wrapText(text string, width int) []string {
+	if width <= 0 || len(text) <= width {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{text}
+	}
+	var lines []string
+	var current strings.Builder
+	for _, word := range words {
+		if current.Len() == 0 {
+			current.WriteString(word)
+			continue
+		}
+		if current.Len()+1+len(word) > width {
+			lines = append(lines, current.String())
+			current.Reset()
+			current.WriteString(word)
+			continue
+		}
+		current.WriteByte(' ')
+		current.WriteString(word)
+	}
+	if current.Len() > 0 {
+		lines = append(lines, current.String())
+	}
+	return lines
 }
 
 func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult prmResult, authRequired bool) string {
