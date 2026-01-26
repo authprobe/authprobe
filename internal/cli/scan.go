@@ -25,6 +25,7 @@ type scanConfig struct {
 	Timeout             time.Duration
 	Verbose             bool
 	Explain             bool
+	ShowTrace           bool
 	FailOn              string
 	RFC9728Mode         string
 	AllowPrivateIssuers bool
@@ -138,6 +139,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	if err != nil {
 		return report, scanSummary{}, err
 	}
+	step1Trace := append([]traceEntry(nil), trace...)
 	findings = append(findings, step1Findings...)
 	step1.Status = statusFromFindings(step1Findings, authRequired)
 	step1.Detail = step1Evidence
@@ -159,6 +161,12 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 			explanation := buildScanExplanation(config, resourceMetadata, prmResult{}, authRequired)
 			if explanation != "" {
 				summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+			}
+		}
+		if config.ShowTrace {
+			traceView := buildProbeTraceASCII(step1Trace, config.Target, resourceMetadata, step1Evidence, authRequired)
+			if traceView != "" {
+				summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceView + "\n"
 			}
 		}
 		summary.Trace = trace
@@ -212,6 +220,12 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 		explanation := buildScanExplanation(config, resourceMetadata, prmResult, authRequired)
 		if explanation != "" {
 			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+		}
+	}
+	if config.ShowTrace {
+		traceView := buildProbeTraceASCII(step1Trace, config.Target, resourceMetadata, step1Evidence, authRequired)
+		if traceView != "" {
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceView + "\n"
 		}
 	}
 	summary.Trace = trace
@@ -999,6 +1013,49 @@ func buildSummary(report scanReport) scanSummary {
 	jsonBytes, _ := json.MarshalIndent(report, "", "  ")
 
 	return scanSummary{Stdout: stdout, MD: md, JSON: jsonBytes}
+}
+
+func buildProbeTraceASCII(entries []traceEntry, target string, resourceMetadata string, evidence string, authRequired bool) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	entry := entries[0]
+	for _, candidate := range entries {
+		if candidate.Method == http.MethodGet && candidate.URL == target {
+			entry = candidate
+			break
+		}
+	}
+	var out strings.Builder
+	fmt.Fprintln(&out, "Trace (step 1: MCP probe)")
+	fmt.Fprintf(&out, "  --> %s %s\n", entry.Method, entry.URL)
+	statusText := http.StatusText(entry.Status)
+	if statusText == "" {
+		statusText = "unknown"
+	}
+	fmt.Fprintf(&out, "  <-- %d %s\n", entry.Status, statusText)
+	if value, ok := findHeader(entry.Headers, "WWW-Authenticate"); ok {
+		fmt.Fprintf(&out, "      WWW-Authenticate: %s\n", value)
+	}
+	if resourceMetadata != "" {
+		fmt.Fprintf(&out, "      resource_metadata: %s\n", resourceMetadata)
+	} else {
+		fmt.Fprintln(&out, "      resource_metadata: (none)")
+	}
+	if evidence != "" {
+		fmt.Fprintf(&out, "      outcome: %s\n", evidence)
+	}
+	fmt.Fprintf(&out, "      auth_required: %t\n", authRequired)
+	return strings.TrimSpace(out.String())
+}
+
+func findHeader(headers map[string]string, name string) (string, bool) {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 func summarizeStepDetail(detail string, maxTools int, maxWidth int) []string {

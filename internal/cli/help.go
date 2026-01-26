@@ -51,6 +51,7 @@ DIAGNOSTICS:
       --verbose            Verbose logs (includes request/response headers + bodies; still redacted).
       --no-redact          Disable redaction (NOT recommended; for local debugging only).
       --explain            Print an RFC 9728 rationale for each scan step.
+      --show-trace         Print the MCP probe call trace in ASCII.
       --tool-list          Print MCP tool names with their titles (from tools/list).
       --tool-detail <name> Print a single MCP tool's full JSON definition.
 
