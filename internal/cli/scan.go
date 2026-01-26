@@ -74,6 +74,34 @@ type traceEntry struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 }
 
+type jsonRPCRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      int    `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
+type jsonRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      any             `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *jsonRPCError   `json:"error,omitempty"`
+}
+
+type jsonRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type mcpToolsListResult struct {
+	Tools []mcpTool `json:"tools"`
+}
+
+type mcpTool struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
 func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary, error) {
 	report := scanReport{
 		Target:      config.Target,
@@ -103,10 +131,14 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	step1.Detail = step1Evidence
 	steps = append(steps, step1)
 
+	step2 := scanStep{ID: 2, Name: "MCP initialize + tools/list"}
+	step2.Status, step2.Detail = mcpInitializeAndListTools(client, config, &trace, stdout, authRequired)
+	steps = append(steps, step2)
+
 	if !authRequired {
-		steps = append(steps, scanStep{ID: 2, Name: "PRM fetch matrix", Status: "SKIP", Detail: "auth not required"})
-		steps = append(steps, scanStep{ID: 3, Name: "Auth server metadata", Status: "SKIP", Detail: "auth not required"})
-		steps = append(steps, scanStep{ID: 4, Name: "Token endpoint readiness (heuristics)", Status: "SKIP", Detail: "auth not required"})
+		steps = append(steps, scanStep{ID: 3, Name: "PRM fetch matrix", Status: "SKIP", Detail: "auth not required"})
+		steps = append(steps, scanStep{ID: 4, Name: "Auth server metadata", Status: "SKIP", Detail: "auth not required"})
+		steps = append(steps, scanStep{ID: 5, Name: "Token endpoint readiness (heuristics)", Status: "SKIP", Detail: "auth not required"})
 		report.Steps = steps
 		report.Findings = findings
 		report.PrimaryFinding = choosePrimaryFinding(findings)
@@ -124,41 +156,41 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 		return report, summary, nil
 	}
 
-	step2 := scanStep{ID: 2, Name: "PRM fetch matrix"}
-	prmResult, step2Findings, step2Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, &trace, stdout)
+	step3 := scanStep{ID: 3, Name: "PRM fetch matrix"}
+	prmResult, step3Findings, step3Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, &trace, stdout)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
-	findings = append(findings, step2Findings...)
-	step2.Status = statusFromFindings(step2Findings, true)
-	step2.Detail = step2Evidence
-	steps = append(steps, step2)
-
-	step3 := scanStep{ID: 3, Name: "Auth server metadata"}
-	authMetadata := authServerMetadataResult{}
-	if len(prmResult.AuthorizationServers) == 0 {
-		step3.Status = "SKIP"
-		step3.Detail = "no authorization_servers in PRM"
-	} else {
-		step3Findings, step3Evidence, metadata := fetchAuthServerMetadata(client, config, prmResult.AuthorizationServers, &trace, stdout)
-		authMetadata = metadata
-		findings = append(findings, step3Findings...)
-		step3.Status = statusFromFindings(step3Findings, true)
-		step3.Detail = step3Evidence
-	}
+	findings = append(findings, step3Findings...)
+	step3.Status = statusFromFindings(step3Findings, true)
+	step3.Detail = step3Evidence
 	steps = append(steps, step3)
 
-	step4 := scanStep{ID: 4, Name: "Token endpoint readiness (heuristics)"}
-	if len(authMetadata.TokenEndpoints) == 0 {
+	step4 := scanStep{ID: 4, Name: "Auth server metadata"}
+	authMetadata := authServerMetadataResult{}
+	if len(prmResult.AuthorizationServers) == 0 {
 		step4.Status = "SKIP"
-		step4.Detail = "no token_endpoint in metadata"
+		step4.Detail = "no authorization_servers in PRM"
 	} else {
-		step4Findings, step4Evidence := probeTokenEndpointReadiness(client, config, authMetadata.TokenEndpoints, &trace, stdout)
+		step4Findings, step4Evidence, metadata := fetchAuthServerMetadata(client, config, prmResult.AuthorizationServers, &trace, stdout)
+		authMetadata = metadata
 		findings = append(findings, step4Findings...)
 		step4.Status = statusFromFindings(step4Findings, true)
 		step4.Detail = step4Evidence
 	}
 	steps = append(steps, step4)
+
+	step5 := scanStep{ID: 5, Name: "Token endpoint readiness (heuristics)"}
+	if len(authMetadata.TokenEndpoints) == 0 {
+		step5.Status = "SKIP"
+		step5.Detail = "no token_endpoint in metadata"
+	} else {
+		step5Findings, step5Evidence := probeTokenEndpointReadiness(client, config, authMetadata.TokenEndpoints, &trace, stdout)
+		findings = append(findings, step5Findings...)
+		step5.Status = statusFromFindings(step5Findings, true)
+		step5.Detail = step5Evidence
+	}
+	steps = append(steps, step5)
 
 	report.Steps = steps
 	report.Findings = findings
@@ -409,6 +441,149 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 		}
 	}
 	return resp, payload, nil
+}
+
+func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer, authRequired bool) (string, string) {
+	var evidence strings.Builder
+
+	initParams := map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo": map[string]any{
+			"name":    "authprobe",
+			"version": "0.1",
+		},
+	}
+
+	initRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "initialize",
+		Params:  initParams,
+	}
+
+	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout)
+	if err != nil {
+		return "FAIL", fmt.Sprintf("initialize error: %v", err)
+	}
+	fmt.Fprintf(&evidence, "initialize -> %d", initResp.StatusCode)
+	if initPayload == nil {
+		fmt.Fprint(&evidence, " (non-JSON response)")
+	}
+	if initPayload != nil && initPayload.Error != nil {
+		fmt.Fprintf(&evidence, " (error: %s)", initPayload.Error.Message)
+	}
+	if initResp.StatusCode == http.StatusUnauthorized || initResp.StatusCode == http.StatusForbidden {
+		if authRequired {
+			fmt.Fprint(&evidence, " (auth required)")
+			return "SKIP", strings.TrimSpace(evidence.String())
+		}
+		return "FAIL", strings.TrimSpace(evidence.String())
+	}
+	if initResp.StatusCode != http.StatusOK || initPayload == nil || initPayload.Error != nil {
+		return "FAIL", strings.TrimSpace(evidence.String())
+	}
+
+	toolsRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "tools/list",
+	}
+	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout)
+	if err != nil {
+		fmt.Fprintf(&evidence, "\n")
+		fmt.Fprintf(&evidence, "tools/list -> error: %v", err)
+		return "FAIL", strings.TrimSpace(evidence.String())
+	}
+	fmt.Fprintf(&evidence, "\n")
+	fmt.Fprintf(&evidence, "tools/list -> %d", toolsResp.StatusCode)
+	if toolsPayload == nil {
+		fmt.Fprint(&evidence, " (non-JSON response)")
+	}
+	if toolsPayload != nil && toolsPayload.Error != nil {
+		fmt.Fprintf(&evidence, " (error: %s)", toolsPayload.Error.Message)
+	}
+	if toolsResp.StatusCode == http.StatusUnauthorized || toolsResp.StatusCode == http.StatusForbidden {
+		if authRequired {
+			fmt.Fprint(&evidence, " (auth required)")
+			return "SKIP", strings.TrimSpace(evidence.String())
+		}
+		return "FAIL", strings.TrimSpace(evidence.String())
+	}
+	if toolsResp.StatusCode != http.StatusOK || toolsPayload == nil || toolsPayload.Error != nil {
+		return "FAIL", strings.TrimSpace(evidence.String())
+	}
+
+	toolNames := extractToolNames(toolsPayload.Result)
+	if len(toolNames) == 0 {
+		fmt.Fprint(&evidence, " (tools: none)")
+	} else {
+		fmt.Fprintf(&evidence, " (tools: %s)", strings.Join(toolNames, ", "))
+	}
+
+	return "PASS", strings.TrimSpace(evidence.String())
+}
+
+func postJSONRPC(client *http.Client, config scanConfig, target string, payload jsonRPCRequest, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, *jsonRPCResponse, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if err := applyHeaders(req, config.Headers); err != nil {
+		return nil, nil, nil, err
+	}
+	if config.Verbose {
+		if err := writeVerboseRequest(stdout, req); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	if config.Verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			return resp, respBody, nil, err
+		}
+	}
+	addTrace(trace, req, resp)
+
+	var parsed jsonRPCResponse
+	if len(respBody) > 0 {
+		if err := json.Unmarshal(respBody, &parsed); err == nil {
+			return resp, respBody, &parsed, nil
+		}
+	}
+	return resp, respBody, nil, nil
+}
+
+func extractToolNames(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var result mcpToolsListResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(result.Tools))
+	for _, tool := range result.Tools {
+		if tool.Name != "" {
+			names = append(names, tool.Name)
+		}
+	}
+	return names
 }
 
 func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEndpoints []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
@@ -760,7 +935,10 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 		fmt.Fprintln(&out, "- resource_metadata hint: (none)")
 	}
 
-	fmt.Fprintln(&out, "\n2) Protected Resource Metadata (PRM) discovery")
+	fmt.Fprintln(&out, "\n2) MCP initialize + tools/list")
+	fmt.Fprintln(&out, "- AuthProbe sends an MCP initialize request followed by tools/list to enumerate server tools.")
+
+	fmt.Fprintln(&out, "\n3) Protected Resource Metadata (PRM) discovery")
 	fmt.Fprintln(&out, "- RFC 9728 defines PRM URLs by inserting /.well-known/oauth-protected-resource between the host and path.")
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
@@ -776,7 +954,7 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 	fmt.Fprintln(&out, "- PRM responses must be JSON objects with a resource that exactly matches the target URL.")
 	fmt.Fprintln(&out, "- authorization_servers is required for OAuth discovery; it lists issuer URLs.")
 
-	fmt.Fprintln(&out, "\n3) Authorization server metadata")
+	fmt.Fprintln(&out, "\n4) Authorization server metadata")
 	if len(prmResult.AuthorizationServers) == 0 {
 		fmt.Fprintln(&out, "- No authorization_servers found in PRM, so AuthProbe skips metadata fetches.")
 	} else {
@@ -788,7 +966,7 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 		}
 	}
 
-	fmt.Fprintln(&out, "\n4) Token endpoint readiness (heuristics)")
+	fmt.Fprintln(&out, "\n5) Token endpoint readiness (heuristics)")
 	fmt.Fprintln(&out, "- AuthProbe sends a safe, invalid grant request to the token endpoint to observe error response behavior.")
 	fmt.Fprintln(&out, "- It flags non-JSON responses or HTTP 200 responses that still contain error payloads.")
 
