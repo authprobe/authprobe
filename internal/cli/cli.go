@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -72,6 +73,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	verbose := fs.Bool("verbose", false, "")
 	fs.Bool("no-redact", false, "")
 	explain := fs.Bool("explain", false, "")
+	toolList := fs.Bool("tool-list", false, "")
+	toolDetail := fs.String("tool-detail", "", "")
 
 	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -99,6 +102,51 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		MDPath:              fs.Lookup("md").Value.String(),
 		BundlePath:          fs.Lookup("bundle").Value.String(),
 		OutputDir:           fs.Lookup("output-dir").Value.String(),
+	}
+
+	if *toolList && *toolDetail != "" {
+		fmt.Fprintln(stderr, "error: --tool-list and --tool-detail cannot be used together")
+		return 3
+	}
+	if *toolList || *toolDetail != "" {
+		client := &http.Client{Timeout: config.Timeout}
+		if config.NoFollowRedirects {
+			client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+		}
+		trace := []traceEntry{}
+		tools, err := fetchMCPTools(client, config, &trace, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 3
+		}
+		if *toolList {
+			sort.Slice(tools, func(i, j int) bool {
+				return tools[i].Name < tools[j].Name
+			})
+			for _, tool := range tools {
+				title := toolTitle(tool)
+				if title == "" {
+					title = "-"
+				}
+				fmt.Fprintf(stdout, "%s\t%s\n", tool.Name, title)
+			}
+			return 0
+		}
+		for _, tool := range tools {
+			if tool.Name == *toolDetail {
+				payload, err := json.MarshalIndent(tool, "", "  ")
+				if err != nil {
+					fmt.Fprintf(stderr, "error: %v\n", err)
+					return 3
+				}
+				fmt.Fprintln(stdout, string(payload))
+				return 0
+			}
+		}
+		fmt.Fprintf(stderr, "error: tool %q not found\n", *toolDetail)
+		return 3
 	}
 
 	report, summary, err := runScanFunnel(config, stdout)
@@ -192,6 +240,20 @@ func parseHeader(raw string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid header format %q", raw)
 	}
 	return key, value, nil
+}
+
+func toolTitle(tool mcpToolDetail) string {
+	if tool.Annotations == nil {
+		return ""
+	}
+	title, ok := tool.Annotations["title"]
+	if !ok {
+		return ""
+	}
+	if titleStr, ok := title.(string); ok {
+		return titleStr
+	}
+	return ""
 }
 
 func writeVerboseRequest(w io.Writer, req *http.Request) error {

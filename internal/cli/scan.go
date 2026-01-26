@@ -102,6 +102,18 @@ type mcpTool struct {
 	Description string `json:"description,omitempty"`
 }
 
+type mcpToolsListDetailResult struct {
+	Tools []mcpToolDetail `json:"tools"`
+}
+
+type mcpToolDetail struct {
+	Name         string          `json:"name"`
+	Description  string          `json:"description,omitempty"`
+	InputSchema  json.RawMessage `json:"inputSchema,omitempty"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	Annotations  map[string]any  `json:"annotations,omitempty"`
+}
+
 func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary, error) {
 	report := scanReport{
 		Target:      config.Target,
@@ -522,6 +534,67 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	}
 
 	return "PASS", strings.TrimSpace(evidence.String())
+}
+
+func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) ([]mcpToolDetail, error) {
+	initParams := map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo": map[string]any{
+			"name":    "authprobe",
+			"version": "0.1",
+		},
+	}
+
+	initRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "initialize",
+		Params:  initParams,
+	}
+
+	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout)
+	if err != nil {
+		return nil, err
+	}
+	if initResp.StatusCode == http.StatusUnauthorized || initResp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("initialize unauthorized: %d", initResp.StatusCode)
+	}
+	if initResp.StatusCode != http.StatusOK || initPayload == nil || initPayload.Error != nil {
+		return nil, fmt.Errorf("initialize failed: %s", formatJSONRPCError(initResp, initPayload))
+	}
+
+	toolsRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "tools/list",
+	}
+	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout)
+	if err != nil {
+		return nil, err
+	}
+	if toolsResp.StatusCode == http.StatusUnauthorized || toolsResp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("tools/list unauthorized: %d", toolsResp.StatusCode)
+	}
+	if toolsResp.StatusCode != http.StatusOK || toolsPayload == nil || toolsPayload.Error != nil {
+		return nil, fmt.Errorf("tools/list failed: %s", formatJSONRPCError(toolsResp, toolsPayload))
+	}
+
+	if len(toolsPayload.Result) == 0 {
+		return nil, errors.New("tools/list returned empty result")
+	}
+	var result mcpToolsListDetailResult
+	if err := json.Unmarshal(toolsPayload.Result, &result); err != nil {
+		return nil, fmt.Errorf("parse tools/list response: %w", err)
+	}
+	return result.Tools, nil
+}
+
+func formatJSONRPCError(resp *http.Response, payload *jsonRPCResponse) string {
+	if payload != nil && payload.Error != nil {
+		return fmt.Sprintf("%d (%s)", resp.StatusCode, payload.Error.Message)
+	}
+	return fmt.Sprintf("%d", resp.StatusCode)
 }
 
 func postJSONRPC(client *http.Client, config scanConfig, target string, payload jsonRPCRequest, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, *jsonRPCResponse, error) {

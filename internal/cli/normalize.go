@@ -19,6 +19,7 @@ func normalizeScanArgs(args []string) []string {
 		"--sarif":           {},
 		"--bundle":          {},
 		"--output-dir":      {},
+		"--tool-detail":     {},
 	}
 
 	flags := make([]string, 0, len(args))
