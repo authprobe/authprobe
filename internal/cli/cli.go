@@ -125,12 +125,18 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 			sort.Slice(tools, func(i, j int) bool {
 				return tools[i].Name < tools[j].Name
 			})
+			maxName := 0
+			for _, tool := range tools {
+				if len(tool.Name) > maxName {
+					maxName = len(tool.Name)
+				}
+			}
 			for _, tool := range tools {
 				title := toolTitle(tool)
 				if title == "" {
 					title = "-"
 				}
-				fmt.Fprintf(stdout, "%s\t%s\n", tool.Name, title)
+				fmt.Fprintf(stdout, "%-*s  %s\n", maxName, tool.Name, title)
 			}
 			return 0
 		}
