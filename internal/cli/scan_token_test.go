@@ -26,8 +26,8 @@ func TestTokenEndpointNotJSONRisk(t *testing.T) {
 	if hasFinding(report.Findings, "TOKEN_HTTP200_ERROR_PAYLOAD_RISK") {
 		t.Fatalf("did not expect TOKEN_HTTP200_ERROR_PAYLOAD_RISK finding")
 	}
-	if step := findStep(report.Steps, 4); step == nil || step.Status != "FAIL" {
-		t.Fatalf("expected step 4 to fail, got %+v", step)
+	if step := findStep(report.Steps, 5); step == nil || step.Status != "FAIL" {
+		t.Fatalf("expected step 5 to fail, got %+v", step)
 	}
 }
 
@@ -47,8 +47,8 @@ func TestTokenEndpointHTTP200ErrorPayloadRisk(t *testing.T) {
 	if hasFinding(report.Findings, "TOKEN_RESPONSE_NOT_JSON_RISK") {
 		t.Fatalf("did not expect TOKEN_RESPONSE_NOT_JSON_RISK finding")
 	}
-	if step := findStep(report.Steps, 4); step == nil || step.Status != "FAIL" {
-		t.Fatalf("expected step 4 to fail, got %+v", step)
+	if step := findStep(report.Steps, 5); step == nil || step.Status != "FAIL" {
+		t.Fatalf("expected step 5 to fail, got %+v", step)
 	}
 }
 
