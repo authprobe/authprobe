@@ -61,6 +61,18 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.Int("connect-timeout", 10, "")
 	fs.Int("retries", 1, "")
 	fs.String("rfc9728", "best-effort", "")
+	fs.String("rfc3986", "best-effort", "")
+	fs.String("rfc8414", "best-effort", "")
+	fs.String("rfc8707", "best-effort", "")
+	fs.String("rfc9207", "best-effort", "")
+	fs.String("rfc6750", "best-effort", "")
+	fs.String("rfc7517", "best-effort", "")
+	fs.String("rfc7519", "best-effort", "")
+	fs.String("rfc7636", "best-effort", "")
+	fs.String("rfc6749", "best-effort", "")
+	fs.String("rfc1918", "best-effort", "")
+	fs.String("rfc6890", "best-effort", "")
+	fs.String("rfc9110", "best-effort", "")
 	fs.Bool("allow-private-issuers", false, "")
 	fs.Bool("insecure", false, "")
 	fs.Bool("no-follow-redirects", false, "")
@@ -98,6 +110,18 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		ShowTrace:           *showTrace,
 		FailOn:              fs.Lookup("fail-on").Value.String(),
 		RFC9728Mode:         fs.Lookup("rfc9728").Value.String(),
+		RFC3986Mode:         fs.Lookup("rfc3986").Value.String(),
+		RFC8414Mode:         fs.Lookup("rfc8414").Value.String(),
+		RFC8707Mode:         fs.Lookup("rfc8707").Value.String(),
+		RFC9207Mode:         fs.Lookup("rfc9207").Value.String(),
+		RFC6750Mode:         fs.Lookup("rfc6750").Value.String(),
+		RFC7517Mode:         fs.Lookup("rfc7517").Value.String(),
+		RFC7519Mode:         fs.Lookup("rfc7519").Value.String(),
+		RFC7636Mode:         fs.Lookup("rfc7636").Value.String(),
+		RFC6749Mode:         fs.Lookup("rfc6749").Value.String(),
+		RFC1918Mode:         fs.Lookup("rfc1918").Value.String(),
+		RFC6890Mode:         fs.Lookup("rfc6890").Value.String(),
+		RFC9110Mode:         fs.Lookup("rfc9110").Value.String(),
 		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
 		NoFollowRedirects:   fs.Lookup("no-follow-redirects").Value.String() == "true",
 		JSONPath:            fs.Lookup("json").Value.String(),
