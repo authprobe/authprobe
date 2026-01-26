@@ -80,6 +80,7 @@ func newTokenHeuristicServer(t *testing.T, tokenHandler http.HandlerFunc) *httpt
 	mux.HandleFunc("/issuer/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 baseURL + "/issuer",
 			"authorization_endpoint": baseURL + "/authorize",
 			"token_endpoint":         baseURL + "/token",
 		})
