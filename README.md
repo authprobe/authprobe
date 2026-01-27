@@ -9,9 +9,9 @@
 [![Security Status](https://snyk.io/test/github/authprobe/authprobe/badge.svg)](https://snyk.io/test/github/authprobe/authprobe)
 [![Project Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
 
-**AuthProbe** is a fast CLI that tells you *exactly why* **MCP OAuth** is broken - and how to fix it.
+**AuthProbe** is a fast CLI that tells you *exactly why* **MCP OAuth** is broken.
 
-It runs a staged probe (discovery → metadata → token readiness → auth header checks), compares behavior across common client styles (VS Code vs Inspector-ish), and generates **copy/paste remediation snippets** for the most common failure modes.
+It runs a staged probe (discovery → metadata → token readiness → auth header checks) and can simulate common client styles (generic, VS Code, Inspector) to pinpoint discovery and metadata issues.
 
 If you’ve ever stared at a mysterious `401`, a `/.well-known` 404, or an “OAuth succeeded but still unauthorized” loop… this is for you.
 
@@ -28,7 +28,7 @@ Remote MCP servers + OAuth fail for boring reasons:
 - different clients follow different discovery flows
 - Verify [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728/)
 
-AuthProbe turns that chaos into a 1-page diagnosis with evidence and a concrete fix path.
+AuthProbe turns that chaos into a 1-page diagnosis with evidence and a concrete fix path to implement manually.
 
 ---
 
@@ -42,15 +42,7 @@ Download the latest release binary from GitHub Releases and put it on your PATH.
 authprobe scan https://mcp.example.com/mcp
 ```
 
-### Compare client compatibility
-```bash
-authprobe matrix https://mcp.example.com/mcp
-```
-
-### Generate a fix snippet
-```bash
-authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --explain
-```
+> `matrix` and `fix` are stub commands in the current v0.1 CLI and will print a "not implemented" message.
 
 ---
 
@@ -62,27 +54,17 @@ $ authprobe scan https://staging.example.com/mcp --profile vscode
 
 Funnel
   [1] MCP probe (401 + WWW-Authenticate) ............... PASS
-  [2] PRM fetch (from resource_metadata) ............... PASS
-  [3] PRM fetch (root /.well-known) .................... FAIL (404)
+  [2] MCP initialize + tools/list ...................... PASS
+  [3] PRM fetch matrix ................................. FAIL (404)
   [4] Auth server metadata ............................. SKIP
+  [5] Token endpoint readiness (heuristics) ............ SKIP
 
 Primary finding (HIGH): DISCOVERY_ROOT_WELLKNOWN_404 (confidence 0.92)
-Fix: authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --explain
+Fix: review the finding details and apply the suggested remediation manually
 ```
 
-### 2) Compatibility matrix (works for X, fails for Y)
-```text
-$ authprobe matrix https://staging.example.com/mcp
-
-| profile    | result | failing step | primary finding              |
-|------------|--------|--------------|------------------------------|
-| generic    | PASS   | -            | -                            |
-| vscode     | FAIL   | PRM(root)    | DISCOVERY_ROOT_WELLKNOWN_404 |
-| inspector  | PASS   | -            | -                            |
-```
-
-### 3) Deterministic fixes (copy/paste, no vibes)
-AuthProbe ships with remediation generators for common MCP OAuth failures (FastAPI shims, Nginx/Envoy rewrites/forwarding rules, minimal PRM templates, etc.).
+### 2) Client profile simulation (generic, VS Code, Inspector)
+Use `--profile` on `scan` to emulate client-specific discovery behavior.
 
 ---
 
@@ -92,13 +74,16 @@ AuthProbe ships with remediation generators for common MCP OAuth failures (FastA
 Diagnose MCP OAuth by running a staged probe.
 
 Common flags:
-- `--profile generic|vscode|inspector`
+- `--profile generic|vscode|inspector` (`-p` alias)
 - `-H "Header: Value"` (repeatable)
 - `--proxy http://127.0.0.1:8080`
+- `--timeout <sec>`, `--connect-timeout <sec>`, `--retries <n>`
 - `--fail-on none|low|medium|high`
 - `--verbose` (print request/response headers + bodies during scan)
 - `--explain` (print RFC 9728 rationale for each scan step)
-- Outputs: `--md`, `--json`, `--sarif`, `--bundle` (use `--json -` for stdout-only JSON)
+- `--show-trace` (print MCP probe trace)
+- `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)
+- Outputs: `--md`, `--json`, `--sarif`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
 
 Examples:
 ```bash
@@ -111,20 +96,23 @@ authprobe scan https://mcp.example.com/mcp --json - | jq '.findings'
 ### `authprobe matrix <mcp_url>`
 Run multiple client profiles and show divergences.
 
+> Note: `matrix` is a stub in v0.1 and prints "not implemented".
+
 Examples:
 ```bash
 authprobe matrix https://mcp.example.com/mcp
-authprobe matrix https://mcp.example.com/mcp --profiles vscode,inspector --format md
+authprobe matrix https://mcp.example.com/mcp --format md
 ```
 
 ### `authprobe fix <FINDING_CODE>`
 Generate a remediation snippet for a finding.
 
+> Note: `fix` is a stub in v0.1 and prints "not implemented".
+
 Examples:
 ```bash
 authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target fastapi --explain
 authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx
-authprobe fix HEADER_STRIPPED_BY_PROXY_SUSPECTED --target envoy --out envoy-snippet.yaml
 ```
 
 ---
@@ -136,6 +124,9 @@ AuthProbe focuses on the most failure-prone parts of MCP OAuth:
 ### Discovery (MCP → OAuth bootstrap)
 - Does the MCP endpoint respond with `401` and a usable `WWW-Authenticate` header?
 - Is there a `resource_metadata=...` pointer for PRM?
+
+### MCP initialize + tools/list
+- Does the MCP server accept `initialize` and `tools/list` after probing?
 
 ### Protected Resource Metadata (PRM)
 - Is `/.well-known/oauth-protected-resource` reachable at the root?
@@ -202,7 +193,7 @@ AuthProbe is **redaction-first**:
 It can be. Client discovery behaviors differ, infra strips headers, `.well-known` endpoints get mounted under prefixes, and auth server behavior varies by provider. AuthProbe exists to make that failure surface deterministic.
 
 ### “Does AuthProbe fix my system automatically?”
-AuthProbe generates deterministic snippets and verify commands. It doesn’t mutate your infrastructure by itself.
+Not yet. The `fix` command is currently a stub in v0.1, so AuthProbe does not generate remediation snippets automatically.
 
 ### “Can it help if OAuth succeeds but requests are still 401?”
 Yes — that’s usually token propagation vs token validation. v0.1 focuses on discovery/metadata/token readiness; later versions can add deeper token propagation checks and debug-proxy capture modes.
