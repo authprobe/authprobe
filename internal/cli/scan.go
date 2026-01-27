@@ -1449,6 +1449,14 @@ func buildSummary(report scanReport) scanSummary {
 		fmt.Fprintln(&out, "\nPrimary finding: -")
 	} else {
 		fmt.Fprintf(&out, "\nPrimary finding (%s): %s (confidence %.2f)\n", strings.ToUpper(report.PrimaryFinding.Severity), report.PrimaryFinding.Code, report.PrimaryFinding.Confidence)
+		if len(report.PrimaryFinding.Evidence) > 0 {
+			fmt.Fprintln(&out, "  Evidence:")
+			for _, line := range report.PrimaryFinding.Evidence {
+				for _, wrapped := range wrapText(line, 96-6) {
+					fmt.Fprintf(&out, "      %s\n", wrapped)
+				}
+			}
+		}
 	}
 	stdout := out.String()
 
