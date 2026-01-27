@@ -3,6 +3,7 @@ package cli
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -299,6 +300,10 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	// Execute the HTTP request
 	resp, err := client.Do(req)
 	if err != nil {
+		if isTimeoutError(err) {
+			evidence := "probe timed out waiting for response headers; MCP servers must return SSE headers or 405 for GET Accept: text/event-stream"
+			return "", []finding{newFinding("MCP_PROBE_TIMEOUT", evidence)}, evidence, true, nil
+		}
 		return "", nil, "", false, err
 	}
 	defer resp.Body.Close()
@@ -1254,6 +1259,17 @@ func statusFromFindings(findings []finding, authRequired bool) string {
 	return "FAIL"
 }
 
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
 func newFinding(code string, evidence string) finding {
 	severity := findingSeverity(code)
 	confidence := findingConfidence(code)
@@ -1338,6 +1354,8 @@ func findingRFCExplanation(code string) string {
 		return "MCP servers should accept the initialize JSON-RPC request and return a valid JSON response per the MCP specification."
 	case "MCP_TOOLS_LIST_FAILED":
 		return "MCP servers should respond to tools/list with a valid JSON result enumerating tools per the MCP specification."
+	case "MCP_PROBE_TIMEOUT":
+		return "MCP servers must respond to GET requests with Accept: text/event-stream by returning SSE headers or a 405; timing out before headers indicates non-compliance."
 	case "METADATA_SSRF_BLOCKED":
 		return "Metadata fetch blocked by local SSRF protections; issuer metadata should be on a permitted host."
 	case "METADATA_REDIRECT_BLOCKED":
@@ -1374,7 +1392,8 @@ func findingSeverity(code string) string {
 		"AUTH_SERVER_METADATA_UNREACHABLE",
 		"AUTH_SERVER_METADATA_INVALID",
 		"MCP_INITIALIZE_FAILED",
-		"MCP_TOOLS_LIST_FAILED":
+		"MCP_TOOLS_LIST_FAILED",
+		"MCP_PROBE_TIMEOUT":
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
 		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
@@ -1399,6 +1418,8 @@ func findingConfidence(code string) float64 {
 	case "TOKEN_RESPONSE_NOT_JSON_RISK",
 		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
 		return 0.7
+	case "MCP_PROBE_TIMEOUT":
+		return 0.8
 	default:
 		return 1.00
 	}
