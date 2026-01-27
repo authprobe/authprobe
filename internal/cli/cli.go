@@ -57,7 +57,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.Var(&headers, "header", "")
 	fs.Var(&headers, "H", "")
 	fs.String("proxy", "", "")
-	timeout := fs.Int("timeout", 60, "")
+	timeout := fs.Int("timeout", 8, "")
 	fs.Int("connect-timeout", 10, "")
 	fs.Int("retries", 1, "")
 	fs.String("rfc9728", "best-effort", "")
