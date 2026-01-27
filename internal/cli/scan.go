@@ -285,6 +285,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	if err != nil {
 		return "", nil, "", false, err
 	}
+	req.Header.Set("Accept", "text/event-stream")
 	// Apply any custom headers specified by the user
 	if err := applyHeaders(req, config.Headers); err != nil {
 		return "", nil, "", false, err
