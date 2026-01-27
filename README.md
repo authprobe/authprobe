@@ -1,5 +1,14 @@
 # AuthProbe — MCP OAuth Diagnostics (scan, matrix, fix)
 
+[![Go Version](https://img.shields.io/github/go-mod/go-version/authprobe/authprobe?logo=go)](https://go.dev/doc/go1.21)
+[![Pkg.go.dev](https://pkg.go.dev/badge/authprobe.svg)](https://pkg.go.dev/authprobe)
+[![Build Status](https://github.com/authprobe/authprobe/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/authprobe/authprobe/actions/workflows/go.yml)
+[![Code Coverage](https://codecov.io/gh/authprobe/authprobe/branch/main/graph/badge.svg)](https://codecov.io/gh/authprobe/authprobe)
+[![License](https://img.shields.io/github/license/authprobe/authprobe)](https://github.com/authprobe/authprobe/blob/main/LICENSE)
+[![Dependencies](https://img.shields.io/librariesio/github/authprobe/authprobe)](https://libraries.io/github/authprobe/authprobe)
+[![Security Status](https://snyk.io/test/github/authprobe/authprobe/badge.svg)](https://snyk.io/test/github/authprobe/authprobe)
+[![Project Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
+
 **AuthProbe** is a fast CLI that tells you *exactly why* **MCP OAuth** is broken - and how to fix it.
 
 It runs a staged probe (discovery → metadata → token readiness → auth header checks), compares behavior across common client styles (VS Code vs Inspector-ish), and generates **copy/paste remediation snippets** for the most common failure modes.
@@ -206,6 +215,11 @@ Contributions that help the ecosystem most:
 - new client profiles
 - new deterministic remediation snippets
 - hardening redaction and report stability
+
+---
+
+## Project status
+AuthProbe is currently **experimental** while the feature set and output formats stabilize.
 
 ---
 
