@@ -66,6 +66,11 @@ Fix: review the finding details and apply the suggested remediation manually
 ### 2) Client profile simulation (generic, VS Code, Inspector)
 Use `--profile` on `scan` to emulate client-specific discovery behavior.
 
+VS Code profile highlights:
+- Enforces strict PRM `resource` equality against the resolved MCP endpoint (post-redirect).
+- Prefers path-suffix PRM discovery (`/.well-known/oauth-protected-resource/<path>`).
+- Warns on legacy root auth-server well-known probe failures and whitespace in scopes.
+
 ---
 
 ## Core commands

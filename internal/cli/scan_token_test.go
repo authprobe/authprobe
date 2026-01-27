@@ -91,11 +91,16 @@ func newTokenHeuristicServer(t *testing.T, tokenHandler http.HandlerFunc) *httpt
 }
 
 func runScanForServer(t *testing.T, target string) scanReport {
+	return runScanForServerProfile(t, target, "generic")
+}
+
+func runScanForServerProfile(t *testing.T, target string, profile string) scanReport {
 	t.Helper()
+	t.Logf("running profile scan: %s", profile)
 	var stdout bytes.Buffer
 	report, _, err := runScanFunnel(scanConfig{
 		Target:              target,
-		Profile:             "generic",
+		Profile:             profile,
 		Timeout:             5 * time.Second,
 		RFC9728Mode:         "best-effort",
 		AllowPrivateIssuers: true,
