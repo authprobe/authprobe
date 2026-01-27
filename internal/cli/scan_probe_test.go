@@ -24,12 +24,15 @@ func TestProbeMCPAuthRequiredWithResourceMetadata(t *testing.T) {
 
 	var stdout bytes.Buffer
 	trace := []traceEntry{}
-	resourceMetadata, findings, evidence, authRequired, err := probeMCP(&http.Client{}, scanConfig{Target: server.URL}, &trace, &stdout)
+	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(&http.Client{}, scanConfig{Target: server.URL}, &trace, &stdout)
 	if err != nil {
 		t.Fatalf("probeMCP returned error: %v", err)
 	}
 	if resourceMetadata != "https://example.com/.well-known/oauth-protected-resource" {
 		t.Fatalf("expected resource metadata, got %q", resourceMetadata)
+	}
+	if resolvedTarget != server.URL {
+		t.Fatalf("expected resolved target %q, got %q", server.URL, resolvedTarget)
 	}
 	if len(findings) != 0 {
 		t.Fatalf("expected no findings, got %+v", findings)
@@ -61,12 +64,15 @@ func TestProbeMCPAuthNotRequiredSkipsAuthChecks(t *testing.T) {
 
 	var stdout bytes.Buffer
 	trace := []traceEntry{}
-	resourceMetadata, findings, evidence, authRequired, err := probeMCP(&http.Client{}, scanConfig{Target: server.URL}, &trace, &stdout)
+	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(&http.Client{}, scanConfig{Target: server.URL}, &trace, &stdout)
 	if err != nil {
 		t.Fatalf("probeMCP returned error: %v", err)
 	}
 	if resourceMetadata != "" {
 		t.Fatalf("expected empty resource metadata, got %q", resourceMetadata)
+	}
+	if resolvedTarget != server.URL {
+		t.Fatalf("expected resolved target %q, got %q", server.URL, resolvedTarget)
 	}
 	if len(findings) != 0 {
 		t.Fatalf("expected no findings, got %+v", findings)
