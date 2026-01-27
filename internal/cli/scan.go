@@ -533,7 +533,6 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				if issuerValue != issuer {
 					findings = append(findings, newFindingWithEvidence("AUTH_SERVER_ISSUER_MISMATCH", []string{
 						fmt.Sprintf("issuer mismatch: metadata issuer %q, expected %q", issuerValue, issuer),
-						"RFC 8414 requires the issuer value in metadata to exactly match the issuer URL used for discovery.",
 					}))
 					continue
 				}
