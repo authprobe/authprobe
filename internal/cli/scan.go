@@ -857,7 +857,7 @@ func postJSONRPC(client *http.Client, config scanConfig, target string, payload 
 		return nil, nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	if err := applyHeaders(req, config.Headers); err != nil {
 		return nil, nil, nil, err
 	}
