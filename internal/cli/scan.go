@@ -341,14 +341,17 @@ func resolvedTarget(resp *http.Response, fallback string) string {
 	return fallback
 }
 
-// fetchPRMMatrix pulls PRM JSON from candidate well-known locations and applies profile-specific checks.
-// In the VS Code profile it compares PRM resource values against the resolved MCP endpoint (post-redirect),
-// prefers path-suffix PRM discovery, and warns when the path-suffix PRM is missing or mismatched.
+// fetchPRMMatrix retrieves protected resource metadata across discovery candidates and applies
+// profile-specific expectations (e.g., VS Code prefers path-suffix PRM and strict resource equality).
 func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
 		return prmResult{}, nil, "", err
 	}
+	// VS Code profile highlights:
+	// - PRM resource equality uses the resolved MCP endpoint (post-redirect).
+	// - Path-suffix PRM is preferred when the MCP endpoint has a path.
+	// - Additional VS Code linting occurs elsewhere (legacy auth-server probe, scope whitespace).
 	preferPathSuffix := isVSCodeProfile(config.Profile)
 	expectedResource := config.Target
 	if preferPathSuffix && resolvedTarget != "" {
@@ -681,8 +684,7 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 
 const maxMetadataRedirects = 5
 
-// fetchWithRedirects retrieves a URL, following redirects with policy checks and tracing each hop.
-// It enforces SSRF protections and redirect hygiene before returning the final response and body.
+// fetchWithRedirects performs metadata fetches with redirect handling and policy checks (SSRF, RFC 9110).
 func fetchWithRedirects(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, error) {
 	current := target
 	for redirects := 0; ; redirects++ {
@@ -1081,11 +1083,7 @@ func rfcModeStrict(mode string) bool {
 	return strings.EqualFold(mode, "strict")
 }
 
-// isVSCodeProfile gates VS Code-specific behavior:
-// - strict PRM resource equality against the resolved MCP endpoint (post-redirect),
-// - preference for path-suffix PRM discovery,
-// - scope whitespace linting, and
-// - legacy root auth-server well-known probes (warning-only).
+// isVSCodeProfile reports whether the scan should apply VS Code-specific discovery expectations.
 func isVSCodeProfile(profile string) bool {
 	return strings.EqualFold(strings.TrimSpace(profile), "vscode")
 }
@@ -1185,8 +1183,7 @@ func checkEndpointHostMismatch(findings *[]finding, endpoint string, issuerHost 
 	}
 }
 
-// scopesWithWhitespace returns scope values that contain leading/trailing whitespace for linting.
-// VS Code treats scope strings literally, so stray whitespace can cause repeated logins.
+// scopesWithWhitespace returns scope strings that include leading/trailing whitespace.
 func scopesWithWhitespace(raw any) []string {
 	scopes, ok := raw.([]any)
 	if !ok {
@@ -1251,8 +1248,7 @@ func buildPRMCandidates(target string, resourceMetadata string) ([]prmCandidate,
 	return candidates, hasPathSuffix, nil
 }
 
-// reorderPRMCandidates prioritizes resource_metadata, then path-suffix PRM, then root PRM discovery.
-// This mirrors VS Code's preference for path-suffix PRM when a resource path is present.
+// reorderPRMCandidates prioritizes candidates for VS Code by checking resource_metadata, path-suffix, then root.
 func reorderPRMCandidates(candidates []prmCandidate) []prmCandidate {
 	resourceMeta := []prmCandidate{}
 	pathSuffix := []prmCandidate{}
@@ -1329,8 +1325,7 @@ func buildMetadataURL(issuer string) string {
 	return parsed.String()
 }
 
-// buildLegacyMetadataURL returns the root /.well-known/oauth-authorization-server URL for an issuer.
-// This is a legacy probe used for VS Code compatibility diagnostics.
+// buildLegacyMetadataURL builds the root-level auth-server metadata URL used by some legacy probes.
 func buildLegacyMetadataURL(issuer string) string {
 	parsed, err := url.Parse(issuer)
 	if err != nil {
