@@ -181,7 +181,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 
-	report, summary, err := runScanFunnel(config, stdout)
+	scanStdout := stdout
+	if isStdoutPath(config.JSONPath) {
+		scanStdout = io.Discard
+	}
+	report, summary, err := runScanFunnel(config, scanStdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
@@ -196,6 +200,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+func isStdoutPath(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	return trimmed == "-" || trimmed == "/dev/stdout"
 }
 
 func runMatrix(args []string, stdout, stderr io.Writer) int {

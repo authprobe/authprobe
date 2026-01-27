@@ -1736,7 +1736,11 @@ func writeOutputs(report scanReport, summary scanSummary, config scanConfig) err
 	mdPath := resolveOutputPath(config.MDPath, outputDir)
 	bundlePath := resolveOutputPath(config.BundlePath, outputDir)
 
-	if jsonPath != "" {
+	if config.JSONPath == "-" {
+		if _, err := os.Stdout.Write(summary.JSON); err != nil {
+			return err
+		}
+	} else if jsonPath != "" {
 		if err := ensureParentDir(jsonPath); err != nil {
 			return err
 		}
