@@ -531,7 +531,10 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 		if rfcModeEnabled(config.RFC8414Mode) {
 			if issuerValue, ok := obj["issuer"].(string); ok {
 				if issuerValue != issuer {
-					findings = append(findings, newFinding("AUTH_SERVER_ISSUER_MISMATCH", fmt.Sprintf("issuer %q != %q (RFC 8414)", issuerValue, issuer)))
+					findings = append(findings, newFindingWithEvidence("AUTH_SERVER_ISSUER_MISMATCH", []string{
+						fmt.Sprintf("issuer mismatch: metadata issuer %q, expected %q", issuerValue, issuer),
+						"RFC 8414 requires the issuer value in metadata to exactly match the issuer URL used for discovery.",
+					}))
 					continue
 				}
 			} else {
@@ -1248,7 +1251,88 @@ func newFinding(code string, evidence string) finding {
 	if evidence != "" {
 		f.Evidence = []string{evidence}
 	}
+	if explanation := findingRFCExplanation(code); explanation != "" {
+		f.Evidence = append(f.Evidence, explanation)
+	}
 	return f
+}
+
+func newFindingWithEvidence(code string, evidence []string) finding {
+	severity := findingSeverity(code)
+	confidence := findingConfidence(code)
+	f := finding{Code: code, Severity: severity, Confidence: confidence}
+	if len(evidence) > 0 {
+		f.Evidence = evidence
+	}
+	if explanation := findingRFCExplanation(code); explanation != "" {
+		f.Evidence = append(f.Evidence, explanation)
+	}
+	return f
+}
+
+func findingRFCExplanation(code string) string {
+	switch code {
+	case "DISCOVERY_NO_WWW_AUTHENTICATE":
+		return "RFC 9728 discovery expects a WWW-Authenticate header with resource_metadata for protected resources."
+	case "DISCOVERY_ROOT_WELLKNOWN_404":
+		return "RFC 9728 defines the root /.well-known/oauth-protected-resource endpoint for PRM discovery."
+	case "PRM_MISSING_AUTHORIZATION_SERVERS":
+		return "RFC 9728 requires authorization_servers in protected resource metadata for OAuth discovery."
+	case "PRM_RESOURCE_MISMATCH":
+		return "RFC 9728 requires the PRM resource value to exactly match the protected resource URL."
+	case "PRM_RESOURCE_MISSING":
+		return "RFC 9728 requires a resource value in protected resource metadata."
+	case "PRM_HTTP_STATUS_NOT_200":
+		return "RFC 9728 expects a 200 OK response from the PRM endpoint for valid metadata."
+	case "PRM_CONTENT_TYPE_NOT_JSON":
+		return "RFC 9728 requires the PRM response to be JSON (application/json)."
+	case "PRM_NOT_JSON_OBJECT":
+		return "RFC 9728 requires the PRM response body to be a JSON object."
+	case "PRM_BEARER_METHODS_INVALID":
+		return "RFC 9728 defines bearer_methods as a JSON array of strings."
+	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING":
+		return "RFC 9728 requires the path-suffix PRM endpoint when the protected resource has a path."
+	case "RESOURCE_FRAGMENT_FORBIDDEN":
+		return "RFC 8707 forbids resource identifiers with URI fragments."
+	case "RFC3986_INVALID_URI":
+		return "RFC 3986 requires valid URI syntax for endpoints and issuer identifiers."
+	case "RFC3986_ABSOLUTE_HTTPS_REQUIRED":
+		return "RFC 3986 and OAuth metadata require absolute HTTPS URLs for endpoints and issuers."
+	case "AUTH_SERVER_ISSUER_QUERY_FRAGMENT":
+		return "RFC 8414 requires issuer identifiers to omit query and fragment components."
+	case "AUTH_SERVER_METADATA_CONTENT_TYPE_NOT_JSON":
+		return "RFC 8414 requires authorization server metadata responses to be JSON."
+	case "AUTH_SERVER_ISSUER_MISMATCH":
+		return "RFC 8414 requires the metadata issuer to exactly match the issuer used for discovery."
+	case "AUTH_SERVER_METADATA_UNREACHABLE":
+		return "RFC 8414 requires authorization server metadata to be retrievable at the well-known location."
+	case "AUTH_SERVER_METADATA_INVALID":
+		return "RFC 8414 defines required metadata fields such as issuer, authorization_endpoint, and token_endpoint."
+	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
+		return "Issuer metadata resolution was blocked by local policy for private or disallowed addresses."
+	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH":
+		return "RFC 8414 expects metadata endpoints to align with the issuer host."
+	case "AUTH_SERVER_PKCE_S256_MISSING":
+		return "RFC 7636 requires support for the S256 code_challenge_method."
+	case "AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH":
+		return "RFC 8707 requires protected_resources to include the resource identifier when provided."
+	case "JWKS_FETCH_ERROR":
+		return "RFC 7517 requires a valid JWKS at jwks_uri when present in metadata."
+	case "JWKS_INVALID":
+		return "RFC 7517 requires a JWKS JSON object with a non-empty keys array."
+	case "TOKEN_RESPONSE_NOT_JSON_RISK":
+		return "RFC 6749 error responses from the token endpoint are expected to be JSON."
+	case "TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
+		return "RFC 6749 requires error responses to use appropriate HTTP status codes."
+	case "METADATA_SSRF_BLOCKED":
+		return "Metadata fetch blocked by local SSRF protections; issuer metadata should be on a permitted host."
+	case "METADATA_REDIRECT_BLOCKED":
+		return "Metadata fetch redirected to a disallowed location and was blocked by policy."
+	case "METADATA_REDIRECT_LIMIT":
+		return "Metadata fetch exceeded the redirect limit before reaching the issuer metadata."
+	default:
+		return ""
+	}
 }
 
 func findingSeverity(code string) string {
