@@ -89,13 +89,14 @@ Common flags:
 - `--fail-on none|low|medium|high`
 - `--verbose` (print request/response headers + bodies during scan)
 - `--explain` (print RFC 9728 rationale for each scan step)
-- Outputs: `--md`, `--json`, `--sarif`, `--bundle`
+- Outputs: `--md`, `--json`, `--sarif`, `--bundle` (use `--json -` for stdout-only JSON)
 
 Examples:
 ```bash
 authprobe scan https://mcp.example.com/mcp --profile vscode
 authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com"
 authprobe scan https://mcp.example.com/mcp --md report.md --json report.json --bundle evidence.zip
+authprobe scan https://mcp.example.com/mcp --json - | jq '.findings'
 ```
 
 ### `authprobe matrix <mcp_url>`
