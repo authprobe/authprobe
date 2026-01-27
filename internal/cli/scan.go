@@ -172,7 +172,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps := []scanStep{}
 
 	step1 := scanStep{ID: 1, Name: "MCP probe (401 + WWW-Authenticate)"}
-	resourceMetadata, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace, stdout)
+	resourceMetadata, resolvedTarget, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace, stdout)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
@@ -217,7 +217,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	}
 
 	step3 := scanStep{ID: 3, Name: "PRM fetch matrix"}
-	prmResult, step3Findings, step3Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, &trace, stdout)
+	prmResult, step3Findings, step3Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, resolvedTarget, &trace, stdout)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
@@ -280,21 +280,21 @@ type prmResult struct {
 	Resource             string
 }
 
-func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, []finding, string, bool, error) {
+func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, string, []finding, string, bool, error) {
 	// Create a GET request to the target MCP endpoint
 	req, err := http.NewRequest(http.MethodGet, config.Target, nil)
 	if err != nil {
-		return "", nil, "", false, err
+		return "", "", nil, "", false, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	// Apply any custom headers specified by the user
 	if err := applyHeaders(req, config.Headers); err != nil {
-		return "", nil, "", false, err
+		return "", "", nil, "", false, err
 	}
 	// If verbose mode is enabled, write the request details to stdout
 	if config.Verbose {
 		if err := writeVerboseRequest(stdout, req); err != nil {
-			return "", nil, "", false, err
+			return "", "", nil, "", false, err
 		}
 	}
 	// Execute the HTTP request
@@ -302,16 +302,16 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	if err != nil {
 		if isTimeoutError(err) {
 			evidence := "probe timed out waiting for response headers; MCP spec requires SSE headers or a 405 for GET Accept: text/event-stream"
-			return "", []finding{newFinding("MCP_PROBE_TIMEOUT", evidence)}, evidence, true, nil
+			return "", config.Target, []finding{newFinding("MCP_PROBE_TIMEOUT", evidence)}, evidence, true, nil
 		}
-		return "", nil, "", false, err
+		return "", "", nil, "", false, err
 	}
 	defer resp.Body.Close()
 	_, _ = drainBody(&resp.Body)
 
 	if config.Verbose {
 		if err := writeVerboseResponse(stdout, resp); err != nil {
-			return "", nil, "", false, err
+			return "", "", nil, "", false, err
 		}
 	}
 
@@ -320,24 +320,45 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		if resp.StatusCode == http.StatusMethodNotAllowed {
-			return "", nil, fmt.Sprintf("probe returned %d; continuing discovery", resp.StatusCode), true, nil
+			return "", resolvedTarget(resp, config.Target), nil, fmt.Sprintf("probe returned %d; continuing discovery", resp.StatusCode), true, nil
 		}
-		return "", nil, "auth not required", false, nil
+		return "", resolvedTarget(resp, config.Target), nil, "auth not required", false, nil
 	}
 
 	resourceMetadata, ok := extractResourceMetadata(resp.Header.Values("WWW-Authenticate"))
 	if !ok {
 		// Missing resource_metadata is a finding - the server requires auth but doesn't provide discovery info
-		return "", []finding{newFinding("DISCOVERY_NO_WWW_AUTHENTICATE", "missing resource_metadata in WWW-Authenticate")}, "missing WWW-Authenticate/resource_metadata", true, nil
+		return "", resolvedTarget(resp, config.Target), []finding{newFinding("DISCOVERY_NO_WWW_AUTHENTICATE", "missing resource_metadata in WWW-Authenticate")}, "missing WWW-Authenticate/resource_metadata", true, nil
 	}
 	// Success: we have a 401 with resource_metadata, indicating proper MCP OAuth discovery
-	return resourceMetadata, nil, "401 with resource_metadata", true, nil
+	return resourceMetadata, resolvedTarget(resp, config.Target), nil, "401 with resource_metadata", true, nil
 }
 
-func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
+func resolvedTarget(resp *http.Response, fallback string) string {
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		return resp.Request.URL.String()
+	}
+	return fallback
+}
+
+// fetchPRMMatrix retrieves protected resource metadata across discovery candidates and applies
+// profile-specific expectations (e.g., VS Code prefers path-suffix PRM and strict resource equality).
+func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
 		return prmResult{}, nil, "", err
+	}
+	// VS Code profile highlights:
+	// - PRM resource equality uses the resolved MCP endpoint (post-redirect).
+	// - Path-suffix PRM is preferred when the MCP endpoint has a path.
+	// - Additional VS Code linting occurs elsewhere (legacy auth-server probe, scope whitespace).
+	preferPathSuffix := isVSCodeProfile(config.Profile)
+	expectedResource := config.Target
+	if preferPathSuffix && resolvedTarget != "" {
+		expectedResource = resolvedTarget
+	}
+	if preferPathSuffix && hasPathSuffix {
+		candidates = reorderPRMCandidates(candidates)
 	}
 
 	findings := []finding{}
@@ -353,6 +374,8 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	}
 	var evidence strings.Builder
 	var bestPRM prmResult
+	var fallbackPRM prmResult
+	fallbackSet := false
 	pathSuffixSeen := false
 	pathSuffixOK := false
 	for _, candidate := range candidates {
@@ -416,8 +439,8 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			findings = append(findings, newFinding("PRM_RESOURCE_MISSING", fmt.Sprintf("%s resource missing", candidate.Source)))
 		}
 		if reportFindings {
-			if prm.Resource != "" && prm.Resource != config.Target {
-				findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, config.Target)))
+			if prm.Resource != "" && prm.Resource != expectedResource {
+				findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, expectedResource)))
 			}
 			if rfcModeEnabled(config.RFC8707Mode) {
 				if parsedResource, err := url.Parse(prm.Resource); err == nil && parsedResource.Fragment != "" {
@@ -459,16 +482,22 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		}
 
 		if hasPathSuffix {
-			if candidate.Source == "path-suffix" && prm.Resource == config.Target {
+			if candidate.Source == "path-suffix" && prm.Resource == expectedResource {
 				bestPRM = prm
 				pathSuffixOK = true
+			} else if !fallbackSet && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
+				fallbackPRM = prm
+				fallbackSet = true
 			}
 		} else if bestPRM.AuthorizationServers == nil && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
 			bestPRM = prm
 		}
 	}
-	if hasPathSuffix && (pathSuffixSeen && !pathSuffixOK) {
+	if hasPathSuffix && preferPathSuffix && (pathSuffixSeen && !pathSuffixOK) {
 		findings = append(findings, newFinding("PRM_WELLKNOWN_PATH_SUFFIX_MISSING", "path-suffix PRM endpoint missing or mismatched"))
+	}
+	if hasPathSuffix && !pathSuffixOK && fallbackSet {
+		bestPRM = fallbackPRM
 	}
 
 	return bestPRM, findings, strings.TrimSpace(evidence.String()), nil
@@ -589,6 +618,11 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing code_challenge_methods_supported", issuer)))
 			}
 		}
+		if isVSCodeProfile(config.Profile) {
+			if badScopes := scopesWithWhitespace(obj["scopes_supported"]); len(badScopes) > 0 {
+				findings = append(findings, newFinding("SCOPES_WHITESPACE_RISK", fmt.Sprintf("scopes_supported contains whitespace: %s", strings.Join(badScopes, ", "))))
+			}
+		}
 		if rfcModeEnabled(config.RFC8707Mode) && prm.Resource != "" {
 			if protectedResources, ok := obj["protected_resources"].([]any); ok && len(protectedResources) > 0 {
 				if !containsString(protectedResources, prm.Resource) {
@@ -618,6 +652,17 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				}
 			}
 		}
+		if isVSCodeProfile(config.Profile) {
+			legacyURL := buildLegacyMetadataURL(issuer)
+			if legacyURL != "" && legacyURL != metadataURL {
+				legacyResp, _, err := fetchWithRedirects(client, config, legacyURL, trace, stdout)
+				if err != nil {
+					findings = append(findings, newFinding("AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED", fmt.Sprintf("legacy metadata probe %s error: %v", legacyURL, err)))
+				} else if legacyResp.StatusCode != http.StatusOK {
+					findings = append(findings, newFinding("AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED", fmt.Sprintf("legacy metadata probe %s status %d", legacyURL, legacyResp.StatusCode)))
+				}
+			}
+		}
 		result.TokenEndpoints = append(result.TokenEndpoints, tokenEndpoint)
 	}
 	return findings, strings.TrimSpace(evidence.String()), result
@@ -639,6 +684,7 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 
 const maxMetadataRedirects = 5
 
+// fetchWithRedirects performs metadata fetches with redirect handling and policy checks (SSRF, RFC 9110).
 func fetchWithRedirects(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, error) {
 	current := target
 	for redirects := 0; ; redirects++ {
@@ -1037,6 +1083,11 @@ func rfcModeStrict(mode string) bool {
 	return strings.EqualFold(mode, "strict")
 }
 
+// isVSCodeProfile reports whether the scan should apply VS Code-specific discovery expectations.
+func isVSCodeProfile(profile string) bool {
+	return strings.EqualFold(strings.TrimSpace(profile), "vscode")
+}
+
 func isHTTPSURL(parsed *url.URL) bool {
 	return parsed != nil && strings.EqualFold(parsed.Scheme, "https") && parsed.Host != ""
 }
@@ -1132,6 +1183,25 @@ func checkEndpointHostMismatch(findings *[]finding, endpoint string, issuerHost 
 	}
 }
 
+// scopesWithWhitespace returns scope strings that include leading/trailing whitespace.
+func scopesWithWhitespace(raw any) []string {
+	scopes, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	var bad []string
+	for _, scope := range scopes {
+		value, ok := scope.(string)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(value) != value {
+			bad = append(bad, fmt.Sprintf("%q", value))
+		}
+	}
+	return bad
+}
+
 func applyHeaders(req *http.Request, headers []string) error {
 	for _, header := range headers {
 		key, value, err := parseHeader(header)
@@ -1176,6 +1246,31 @@ func buildPRMCandidates(target string, resourceMetadata string) ([]prmCandidate,
 		candidates = append(candidates, prmCandidate{URL: pathSuffix, Source: "path-suffix"})
 	}
 	return candidates, hasPathSuffix, nil
+}
+
+// reorderPRMCandidates prioritizes candidates for VS Code by checking resource_metadata, path-suffix, then root.
+func reorderPRMCandidates(candidates []prmCandidate) []prmCandidate {
+	resourceMeta := []prmCandidate{}
+	pathSuffix := []prmCandidate{}
+	root := []prmCandidate{}
+	other := []prmCandidate{}
+	for _, candidate := range candidates {
+		switch candidate.Source {
+		case "resource_metadata":
+			resourceMeta = append(resourceMeta, candidate)
+		case "path-suffix":
+			pathSuffix = append(pathSuffix, candidate)
+		case "root":
+			root = append(root, candidate)
+		default:
+			other = append(other, candidate)
+		}
+	}
+	ordered := append([]prmCandidate{}, resourceMeta...)
+	ordered = append(ordered, pathSuffix...)
+	ordered = append(ordered, root...)
+	ordered = append(ordered, other...)
+	return ordered
 }
 
 func buildPathSuffixCandidate(target *url.URL) (string, bool) {
@@ -1228,6 +1323,22 @@ func buildMetadataURL(issuer string) string {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
+}
+
+// buildLegacyMetadataURL builds the root-level auth-server metadata URL used by some legacy probes.
+func buildLegacyMetadataURL(issuer string) string {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return (&url.URL{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+		Path:   "/.well-known/oauth-authorization-server",
+	}).String()
 }
 
 func issuerPrivate(issuer string) bool {
@@ -1350,6 +1461,10 @@ func findingRFCExplanation(code string) string {
 		return "RFC 6749 error responses from the token endpoint are expected to be JSON."
 	case "TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
 		return "RFC 6749 requires error responses to use appropriate HTTP status codes."
+	case "AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED":
+		return "Some clients probe the root /.well-known/oauth-authorization-server for legacy compatibility; failures can indicate VS Code compatibility risks."
+	case "SCOPES_WHITESPACE_RISK":
+		return "Scope strings are parsed literally; leading or trailing whitespace can cause repeated login prompts."
 	case "MCP_INITIALIZE_FAILED":
 		return "MCP servers should accept the initialize JSON-RPC request and return a valid JSON response per the MCP specification."
 	case "MCP_TOOLS_LIST_FAILED":
@@ -1397,12 +1512,14 @@ func findingSeverity(code string) string {
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
 		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
+		"SCOPES_WHITESPACE_RISK",
 		"TOKEN_RESPONSE_NOT_JSON_RISK",
 		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
 		return "medium"
 	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH",
 		"AUTH_SERVER_PKCE_S256_MISSING",
-		"AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH":
+		"AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH",
+		"AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED":
 		return "low"
 	default:
 		return "low"
@@ -1444,6 +1561,10 @@ func findingConfidence(code string) float64 {
 		// - Actual MCP configuration issues (SSE headers not sent, wrong endpoint)
 		// The uncertainty between transient vs. persistent issues warrants lower confidence
 		return 0.8
+	case "SCOPES_WHITESPACE_RISK":
+		// 0.85: Heuristic lint (0.80-0.90 range per PRD)
+		// Whitespace in scopes is a compatibility hazard but not always fatal.
+		return 0.85
 	default:
 		// 1.00: Direct deterministic evidence (per PRD)
 		// Most findings have full confidence because they're based on:
