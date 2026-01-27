@@ -1422,6 +1422,7 @@ func severityRank(severity string) int {
 
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
+	fmt.Fprintf(&out, "Scanning: %s\n", report.Target)
 	fmt.Fprintln(&out, "Funnel")
 	maxLabel := 0
 	maxStatus := 0
@@ -1444,9 +1445,7 @@ func buildSummary(report scanReport) scanSummary {
 			}
 		}
 	}
-	if report.PrimaryFinding.Code == "" {
-		fmt.Fprintln(&out, "\nPrimary finding: -")
-	} else {
+	if report.PrimaryFinding.Code != "" {
 		fmt.Fprintf(&out, "\nPrimary finding (%s): %s (confidence %.2f)\n", strings.ToUpper(report.PrimaryFinding.Severity), report.PrimaryFinding.Code, report.PrimaryFinding.Confidence)
 		if len(report.PrimaryFinding.Evidence) > 0 {
 			fmt.Fprintln(&out, "  Evidence:")
@@ -1644,6 +1643,7 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 func renderMarkdown(report scanReport) string {
 	var md strings.Builder
 	fmt.Fprintf(&md, "# AuthProbe report\n\n")
+	fmt.Fprintf(&md, "Scanning: %s\n\n", report.Target)
 	fmt.Fprintf(&md, "- Target: %s\n", report.Target)
 	fmt.Fprintf(&md, "- Profile: %s\n", report.Profile)
 	fmt.Fprintf(&md, "- RFC9728: %s\n", report.RFC9728Mode)
@@ -1668,10 +1668,8 @@ func renderMarkdown(report scanReport) string {
 		}
 		fmt.Fprintln(&md)
 	}
-	fmt.Fprintf(&md, "\n## Primary finding\n\n")
-	if report.PrimaryFinding.Code == "" {
-		fmt.Fprintln(&md, "None.")
-	} else {
+	if report.PrimaryFinding.Code != "" {
+		fmt.Fprintf(&md, "\n## Primary finding\n\n")
 		fmt.Fprintf(&md, "- Code: %s\n", report.PrimaryFinding.Code)
 		fmt.Fprintf(&md, "- Severity: %s\n", report.PrimaryFinding.Severity)
 		fmt.Fprintf(&md, "- Confidence: %.2f\n", report.PrimaryFinding.Confidence)
