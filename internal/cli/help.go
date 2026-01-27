@@ -19,7 +19,7 @@ FLAGS:
       --proxy <url>        HTTP(S) proxy for outbound requests.
                            Example: --proxy http://127.0.0.1:8080
 
-      --timeout <sec>      Overall scan timeout in seconds. Default: 60
+      --timeout <sec>      Overall scan timeout in seconds. Default: 8
       --connect-timeout <sec>
                            Connection timeout in seconds. Default: 10
       --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
