@@ -10,10 +10,10 @@ import (
 
 // Ensures the VS Code profile flags resource mismatches after redirects.
 // Example trace:
-// - GET /mcp -> 301 Location: /mcp/
-// - GET /mcp/ -> 401 WWW-Authenticate: resource_metadata=.../oauth-protected-resource/mcp
-// - GET /.well-known/oauth-protected-resource/mcp -> 200 {"resource":"https://host/mcp"}
-// The resolved MCP endpoint is https://host/mcp/, so VS Code expects exact resource equality and flags the mismatch.
+// 1) GET /mcp -> 301 Location: /mcp/
+// 2) GET /mcp/ -> 401 WWW-Authenticate resource_metadata=.../oauth-protected-resource/mcp
+// 3) PRM resource returns "https://host/mcp" while the resolved target is "https://host/mcp/"
+// The VS Code profile compares PRM resource against the resolved endpoint and should flag mismatch.
 func TestVSCodeProfileResourceMismatchAfterRedirect(t *testing.T) {
 	server := newVSCodeRedirectMismatchServer(t)
 	defer server.Close()
@@ -27,10 +27,10 @@ func TestVSCodeProfileResourceMismatchAfterRedirect(t *testing.T) {
 
 // Ensures the VS Code profile flags missing path-suffix PRM endpoints.
 // Example trace:
-// - POST /mcp -> 401 with resource_metadata pointing at /oauth-protected-resource/mcp
-// - GET /.well-known/oauth-protected-resource/mcp -> 404
-// - GET /.well-known/oauth-protected-resource -> 200
-// VS Code treats the missing path-suffix PRM as a compatibility risk.
+// 1) POST/GET /mcp -> 401 with resource_metadata=.../oauth-protected-resource/mcp
+// 2) GET /.well-known/oauth-protected-resource/mcp -> 404
+// 3) GET /.well-known/oauth-protected-resource -> 200 (valid root PRM)
+// VS Code prefers the path-suffix PRM, so a missing endpoint is flagged.
 func TestVSCodeProfilePathSuffixMissing(t *testing.T) {
 	server := newVSCodePathSuffixMissingServer(t)
 	defer server.Close()
@@ -43,8 +43,8 @@ func TestVSCodeProfilePathSuffixMissing(t *testing.T) {
 }
 
 // Ensures scope whitespace warnings are emitted under the VS Code profile.
-// Example: scopes_supported includes "user_impersonation " (trailing space),
-// which VS Code treats literally and can cause repeated login prompts.
+// Example: metadata scopes_supported includes "user_impersonation " (trailing space).
+// VS Code treats scope strings literally, so whitespace risks repeated login prompts.
 func TestVSCodeProfileScopesWhitespaceRisk(t *testing.T) {
 	server := newVSCodeScopesWhitespaceServer(t)
 	defer server.Close()
@@ -57,7 +57,7 @@ func TestVSCodeProfileScopesWhitespaceRisk(t *testing.T) {
 }
 
 // newVSCodeRedirectMismatchServer simulates a redirecting MCP endpoint with PRM resource mismatch.
-// The server redirects /mcp -> /mcp/ but the PRM resource omits the trailing slash.
+// The PRM claims a resource without a trailing slash while the resolved MCP endpoint ends with "/".
 func newVSCodeRedirectMismatchServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -97,7 +97,7 @@ func newVSCodeRedirectMismatchServer(t *testing.T) *httptest.Server {
 }
 
 // newVSCodePathSuffixMissingServer simulates a missing path-suffix PRM endpoint with a root fallback.
-// This mirrors a server that only publishes root PRM while VS Code expects the path-suffix variant.
+// This models services that only publish root PRM even when the MCP endpoint has a path.
 func newVSCodePathSuffixMissingServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -125,7 +125,7 @@ func newVSCodePathSuffixMissingServer(t *testing.T) *httptest.Server {
 }
 
 // newVSCodeScopesWhitespaceServer exposes whitespace in scopes_supported for linting.
-// The trailing space is intentional to trigger SCOPES_WHITESPACE_RISK.
+// The VS Code profile treats this as a compatibility warning.
 func newVSCodeScopesWhitespaceServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -150,7 +150,7 @@ func newVSCodeScopesWhitespaceServer(t *testing.T) *httptest.Server {
 }
 
 // addAuthMetadataHandlers registers auth server metadata endpoints shared by VS Code fixtures.
-// It includes both issuer-scoped metadata and a legacy root well-known endpoint.
+// It includes a legacy root well-known endpoint to support VS Code's optional probe.
 func addAuthMetadataHandlers(mux *http.ServeMux, baseURL string, scopes []string) {
 	mux.HandleFunc("/issuer/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
