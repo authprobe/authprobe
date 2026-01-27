@@ -1196,7 +1196,7 @@ func buildPathSuffixCandidate(target *url.URL) (string, bool) {
 }
 
 func extractResourceMetadata(headers []string) (string, bool) {
-	re := regexp.MustCompile(`resource_metadata\\s*=\\s*\"([^\"]+)\"|resource_metadata\\s*=\\s*([^,\\s]+)`)
+	re := regexp.MustCompile(`resource_metadata\s*=\s*"([^"]+)"|resource_metadata\s*=\s*([^,\s]+)`)
 	for _, header := range headers {
 		matches := re.FindStringSubmatch(header)
 		if len(matches) > 1 && matches[1] != "" {
