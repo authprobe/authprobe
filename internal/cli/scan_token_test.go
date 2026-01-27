@@ -96,6 +96,7 @@ func runScanForServer(t *testing.T, target string) scanReport {
 
 func runScanForServerProfile(t *testing.T, target string, profile string) scanReport {
 	t.Helper()
+	t.Logf("running profile scan: %s", profile)
 	var stdout bytes.Buffer
 	report, _, err := runScanFunnel(scanConfig{
 		Target:              target,
