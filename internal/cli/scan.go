@@ -1412,15 +1412,46 @@ func findingSeverity(code string) string {
 func findingConfidence(code string) float64 {
 	switch code {
 	case "DISCOVERY_ROOT_WELLKNOWN_404":
+		// 0.92: Strong inference (0.85-0.95 range per PRD)
+		// A 404 on the root PRM endpoint is a strong indicator of misconfiguration,
+		// but not definitive because:
+		// - The server might implement path-suffix endpoints instead (RFC 9728 allows this)
+		// - The endpoint might be at a different location
+		// - Some servers may intentionally not expose the root endpoint
 		return 0.92
 	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
+		// 0.85: Strong inference (0.85-0.95 range per PRD)
+		// Blocking private issuers is a safety/policy decision, not a technical failure.
+		// Lower confidence because:
+		// - Private issuers might be intentional (internal services, localhost development)
+		// - It's a security measure, not necessarily indicating a problem
+		// - The user can override with --allow-private-issuers if needed
 		return 0.85
 	case "TOKEN_RESPONSE_NOT_JSON_RISK",
 		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
+		// 0.7: Heuristic risk pattern (0.60-0.80 range per PRD)
+		// These are behavioral heuristics, not definitive failures:
+		// - Token endpoints may legitimately use form-encoded responses (RFC 6749 allows this)
+		// - HTTP 200 with error payloads might be a valid pattern for some servers
+		// - These are "RISK" findings - warnings about potential issues, not certain problems
+		// Lower confidence reflects that these are inferred from behavior patterns
 		return 0.7
 	case "MCP_PROBE_TIMEOUT":
+		// 0.8: Heuristic risk pattern (0.60-0.80 range per PRD)
+		// Timeouts have lower confidence because they could indicate:
+		// - Transient network issues (not a configuration problem)
+		// - Temporary server unavailability
+		// - Actual MCP configuration issues (SSE headers not sent, wrong endpoint)
+		// The uncertainty between transient vs. persistent issues warrants lower confidence
 		return 0.8
 	default:
+		// 1.00: Direct deterministic evidence (per PRD)
+		// Most findings have full confidence because they're based on:
+		// - Direct HTTP status code mismatches
+		// - Missing required fields in JSON responses
+		// - Exact value mismatches (e.g., resource URL)
+		// - Invalid content types or formats
+		// These are objective, verifiable facts with no ambiguity
 		return 1.00
 	}
 }
