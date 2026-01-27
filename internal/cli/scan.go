@@ -301,7 +301,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	resp, err := client.Do(req)
 	if err != nil {
 		if isTimeoutError(err) {
-			evidence := "probe timed out waiting for response headers; MCP servers must return SSE headers or 405 for GET Accept: text/event-stream"
+			evidence := "probe timed out waiting for response headers; MCP spec requires SSE headers or a 405 for GET Accept: text/event-stream"
 			return "", []finding{newFinding("MCP_PROBE_TIMEOUT", evidence)}, evidence, true, nil
 		}
 		return "", nil, "", false, err
@@ -1355,7 +1355,7 @@ func findingRFCExplanation(code string) string {
 	case "MCP_TOOLS_LIST_FAILED":
 		return "MCP servers should respond to tools/list with a valid JSON result enumerating tools per the MCP specification."
 	case "MCP_PROBE_TIMEOUT":
-		return "MCP servers must respond to GET requests with Accept: text/event-stream by returning SSE headers or a 405; timing out before headers indicates non-compliance."
+		return "MCP spec: \"The server MUST either return Content-Type: text/event-stream for GET requests or else return 405 Method Not Allowed.\" Timing out before headers indicates non-compliance."
 	case "METADATA_SSRF_BLOCKED":
 		return "Metadata fetch blocked by local SSRF protections; issuer metadata should be on a permitted host."
 	case "METADATA_REDIRECT_BLOCKED":
