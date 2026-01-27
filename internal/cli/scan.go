@@ -182,7 +182,8 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps = append(steps, step1)
 
 	step2 := scanStep{ID: 2, Name: "MCP initialize + tools/list"}
-	step2.Status, step2.Detail = mcpInitializeAndListTools(client, config, &trace, stdout, authRequired)
+	step2.Status, step2.Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, stdout, authRequired)
+	findings = append(findings, step2Findings...)
 	steps = append(steps, step2)
 
 	if !authRequired {
@@ -694,8 +695,9 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 	}
 }
 
-func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer, authRequired bool) (string, string) {
+func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer, authRequired bool) (string, string, []finding) {
 	var evidence strings.Builder
+	findings := []finding{}
 
 	initParams := map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -715,7 +717,8 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 
 	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout)
 	if err != nil {
-		return "FAIL", fmt.Sprintf("initialize error: %v", err)
+		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", fmt.Sprintf("initialize error: %v", err)))
+		return "FAIL", fmt.Sprintf("initialize error: %v", err), findings
 	}
 	fmt.Fprintf(&evidence, "initialize -> %d", initResp.StatusCode)
 	if initPayload == nil {
@@ -727,12 +730,14 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	if initResp.StatusCode == http.StatusUnauthorized || initResp.StatusCode == http.StatusForbidden {
 		if authRequired {
 			fmt.Fprint(&evidence, " (auth required)")
-			return "SKIP", strings.TrimSpace(evidence.String())
+			return "SKIP", strings.TrimSpace(evidence.String()), findings
 		}
-		return "FAIL", strings.TrimSpace(evidence.String())
+		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", strings.TrimSpace(evidence.String())))
+		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
 	if initResp.StatusCode != http.StatusOK || initPayload == nil || initPayload.Error != nil {
-		return "FAIL", strings.TrimSpace(evidence.String())
+		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", strings.TrimSpace(evidence.String())))
+		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
 
 	toolsRequest := jsonRPCRequest{
@@ -744,7 +749,8 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	if err != nil {
 		fmt.Fprintf(&evidence, "\n")
 		fmt.Fprintf(&evidence, "tools/list -> error: %v", err)
-		return "FAIL", strings.TrimSpace(evidence.String())
+		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
+		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
 	fmt.Fprintf(&evidence, "\n")
 	fmt.Fprintf(&evidence, "tools/list -> %d", toolsResp.StatusCode)
@@ -757,12 +763,14 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	if toolsResp.StatusCode == http.StatusUnauthorized || toolsResp.StatusCode == http.StatusForbidden {
 		if authRequired {
 			fmt.Fprint(&evidence, " (auth required)")
-			return "SKIP", strings.TrimSpace(evidence.String())
+			return "SKIP", strings.TrimSpace(evidence.String()), findings
 		}
-		return "FAIL", strings.TrimSpace(evidence.String())
+		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
+		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
 	if toolsResp.StatusCode != http.StatusOK || toolsPayload == nil || toolsPayload.Error != nil {
-		return "FAIL", strings.TrimSpace(evidence.String())
+		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
+		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
 
 	toolNames := extractToolNames(toolsPayload.Result)
@@ -772,7 +780,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		fmt.Fprintf(&evidence, " (tools: %s)", strings.Join(toolNames, ", "))
 	}
 
-	return "PASS", strings.TrimSpace(evidence.String())
+	return "PASS", strings.TrimSpace(evidence.String()), findings
 }
 
 func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) ([]mcpToolDetail, error) {
@@ -1323,6 +1331,10 @@ func findingRFCExplanation(code string) string {
 		return "RFC 6749 error responses from the token endpoint are expected to be JSON."
 	case "TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
 		return "RFC 6749 requires error responses to use appropriate HTTP status codes."
+	case "MCP_INITIALIZE_FAILED":
+		return "MCP servers should accept the initialize JSON-RPC request and return a valid JSON response per the MCP specification."
+	case "MCP_TOOLS_LIST_FAILED":
+		return "MCP servers should respond to tools/list with a valid JSON result enumerating tools per the MCP specification."
 	case "METADATA_SSRF_BLOCKED":
 		return "Metadata fetch blocked by local SSRF protections; issuer metadata should be on a permitted host."
 	case "METADATA_REDIRECT_BLOCKED":
@@ -1357,7 +1369,9 @@ func findingSeverity(code string) string {
 		"JWKS_FETCH_ERROR",
 		"JWKS_INVALID",
 		"AUTH_SERVER_METADATA_UNREACHABLE",
-		"AUTH_SERVER_METADATA_INVALID":
+		"AUTH_SERVER_METADATA_INVALID",
+		"MCP_INITIALIZE_FAILED",
+		"MCP_TOOLS_LIST_FAILED":
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
 		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
