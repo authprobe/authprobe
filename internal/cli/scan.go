@@ -182,7 +182,9 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps = append(steps, step1)
 
 	step2 := scanStep{ID: 2, Name: "MCP initialize + tools/list"}
-	step2.Status, step2.Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, stdout, authRequired)
+	step2Status, step2Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, stdout, authRequired)
+	step2.Status = step2Status
+	step2.Detail = step2Detail
 	findings = append(findings, step2Findings...)
 	steps = append(steps, step2)
 
