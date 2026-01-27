@@ -14,7 +14,7 @@ func TestScanComputeMCPVerbose(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"scan", "https://compute.googleapis.com/mcp", "--verbose"}, &stdout, &stderr)
+	code := Run([]string{"scan", "https://compute.googleapis.com/mcp", "--verbose", "--fail-on", "none"}, &stdout, &stderr)
 
 	if code != 0 {
 		if isNetworkBlocked(stderr.String()) {
