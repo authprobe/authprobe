@@ -77,7 +77,7 @@ FLAGS:
                            Default: high
 
 OUTPUTS:
-      --json <path>        Write structured JSON report to file.
+      --json <path>        Write structured JSON report to file. Use "-" for stdout.
       --md <path>          Write Markdown report to file.
       --sarif <path>       Write SARIF report (GitHub code scanning) to file.
       --bundle <path>      Write sanitized evidence bundle (zip) to file.
