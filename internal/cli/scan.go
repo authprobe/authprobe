@@ -1612,7 +1612,11 @@ func severityRank(severity string) int {
 
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
-	fmt.Fprintf(&out, "Scanning: %s\n", report.Target)
+	fmt.Fprintf(&out, "Scanning: %s", report.Target)
+	if report.Profile != "" && report.Profile != "generic" {
+		fmt.Fprintf(&out, " (profile: %s)", report.Profile)
+	}
+	fmt.Fprintln(&out)
 	fmt.Fprintln(&out, "Funnel")
 	maxLabel := 0
 	maxStatus := 0
