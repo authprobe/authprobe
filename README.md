@@ -94,6 +94,8 @@ authprobe matrix https://mcp.example.com/mcp --format md
 
 AuthProbe focuses on the most failure-prone parts of MCP OAuth:
 
+For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
+
 ### Discovery (MCP → OAuth bootstrap)
 - Does the MCP endpoint respond with `401` and a usable `WWW-Authenticate` header?
 - Is there a `resource_metadata=...` pointer for PRM?
