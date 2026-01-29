@@ -270,6 +270,13 @@ func toolTitle(tool mcpToolDetail) string {
 	return ""
 }
 
+func writeVerboseHeading(w io.Writer, title string) {
+	if title == "" {
+		return
+	}
+	fmt.Fprintf(w, "\n== %s ==\n", title)
+}
+
 func writeVerboseRequest(w io.Writer, req *http.Request) error {
 	body, err := drainBody(&req.Body)
 	if err != nil {

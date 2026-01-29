@@ -293,6 +293,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	}
 	// If verbose mode is enabled, write the request details to stdout
 	if config.Verbose {
+		writeVerboseHeading(stdout, "Step 1: MCP probe (401 + WWW-Authenticate)")
 		if err := writeVerboseRequest(stdout, req); err != nil {
 			return "", "", nil, "", false, err
 		}
@@ -391,7 +392,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 				findings = append(findings, urlFindings...)
 			}
 		}
-		resp, payload, err := fetchJSON(client, config, candidate.URL, trace, stdout)
+		resp, payload, err := fetchJSON(client, config, candidate.URL, trace, stdout, "Step 3: PRM fetch matrix")
 		if err != nil {
 			if reportFindings {
 				var policyErr fetchPolicyError
@@ -539,7 +540,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 			}
 		}
 		metadataURL := buildMetadataURL(issuer)
-		resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout)
+		resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout, "Step 4: Auth server metadata")
 		if err != nil {
 			var policyErr fetchPolicyError
 			if errors.As(err, &policyErr) {
@@ -635,7 +636,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				if urlFindings := validateURLString(jwksURI, "jwks_uri", config, false); len(urlFindings) > 0 {
 					findings = append(findings, urlFindings...)
 				}
-				jwksResp, jwksPayload, err := fetchJSON(client, config, jwksURI, trace, stdout)
+				jwksResp, jwksPayload, err := fetchJSON(client, config, jwksURI, trace, stdout, "Step 4: Auth server metadata")
 				if err != nil {
 					var policyErr fetchPolicyError
 					if errors.As(err, &policyErr) {
@@ -655,7 +656,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 		if isVSCodeProfile(config.Profile) {
 			legacyURL := buildLegacyMetadataURL(issuer)
 			if legacyURL != "" && legacyURL != metadataURL {
-				legacyResp, _, err := fetchWithRedirects(client, config, legacyURL, trace, stdout)
+				legacyResp, _, err := fetchWithRedirects(client, config, legacyURL, trace, stdout, "Step 4: Auth server metadata")
 				if err != nil {
 					findings = append(findings, newFinding("AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED", fmt.Sprintf("legacy metadata probe %s error: %v", legacyURL, err)))
 				} else if legacyResp.StatusCode != http.StatusOK {
@@ -668,8 +669,8 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 	return findings, strings.TrimSpace(evidence.String()), result
 }
 
-func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, any, error) {
-	resp, body, err := fetchWithRedirects(client, config, target, trace, stdout)
+func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, any, error) {
+	resp, body, err := fetchWithRedirects(client, config, target, trace, stdout, verboseLabel)
 	if err != nil {
 		return resp, nil, err
 	}
@@ -685,8 +686,11 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 const maxMetadataRedirects = 5
 
 // fetchWithRedirects performs metadata fetches with redirect handling and policy checks (SSRF, RFC 9110).
-func fetchWithRedirects(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, error) {
+func fetchWithRedirects(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
 	current := target
+	if config.Verbose {
+		writeVerboseHeading(stdout, verboseLabel)
+	}
 	for redirects := 0; ; redirects++ {
 		if err := validateFetchTarget(config, current); err != nil {
 			return nil, nil, err
@@ -769,7 +773,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		Params:  initParams,
 	}
 
-	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout)
+	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout, "Step 2: MCP initialize + tools/list (initialize)")
 	if err != nil {
 		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", fmt.Sprintf("initialize error: %v", err)))
 		return "FAIL", fmt.Sprintf("initialize error: %v", err), findings
@@ -799,7 +803,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		ID:      2,
 		Method:  "tools/list",
 	}
-	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout)
+	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout, "Step 2: MCP initialize + tools/list (tools/list)")
 	if err != nil {
 		fmt.Fprintf(&evidence, "\n")
 		fmt.Fprintf(&evidence, "tools/list -> error: %v", err)
@@ -854,7 +858,7 @@ func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, 
 		Params:  initParams,
 	}
 
-	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout)
+	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout, "MCP tool fetch (initialize)")
 	if err != nil {
 		return nil, err
 	}
@@ -870,7 +874,7 @@ func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, 
 		ID:      2,
 		Method:  "tools/list",
 	}
-	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout)
+	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout, "MCP tool fetch (tools/list)")
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +902,7 @@ func formatJSONRPCError(resp *http.Response, payload *jsonRPCResponse) string {
 	return fmt.Sprintf("%d", resp.StatusCode)
 }
 
-func postJSONRPC(client *http.Client, config scanConfig, target string, payload jsonRPCRequest, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, *jsonRPCResponse, error) {
+func postJSONRPC(client *http.Client, config scanConfig, target string, payload jsonRPCRequest, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, *jsonRPCResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, nil, err
@@ -913,6 +917,7 @@ func postJSONRPC(client *http.Client, config scanConfig, target string, payload 
 		return nil, nil, nil, err
 	}
 	if config.Verbose {
+		writeVerboseHeading(stdout, verboseLabel)
 		if err := writeVerboseRequest(stdout, req); err != nil {
 			return nil, nil, nil, err
 		}
@@ -967,7 +972,7 @@ func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEn
 		if endpoint == "" {
 			continue
 		}
-		resp, body, err := postTokenProbe(client, config, endpoint, trace, stdout)
+		resp, body, err := postTokenProbe(client, config, endpoint, trace, stdout, "Step 5: Token endpoint readiness (heuristics)")
 		if err != nil {
 			fmt.Fprintf(&evidence, "%s -> error: %v\n", endpoint, err)
 			continue
@@ -991,7 +996,7 @@ func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEn
 	return findings, strings.TrimSpace(evidence.String())
 }
 
-func postTokenProbe(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer) (*http.Response, []byte, error) {
+func postTokenProbe(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", "invalid")
@@ -1008,6 +1013,7 @@ func postTokenProbe(client *http.Client, config scanConfig, target string, trace
 		return nil, nil, err
 	}
 	if config.Verbose {
+		writeVerboseHeading(stdout, verboseLabel)
 		if err := writeVerboseRequest(stdout, req); err != nil {
 			return nil, nil, err
 		}
