@@ -9,7 +9,7 @@
 
 Remote MCP servers + OAuth fail for boring reasons. Left unfixed, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
 
-Some boring problems that authprobe and check are - `/.well-known/oauth-protected-resource` is missing at the **root**, `WWW-Authenticate` / `resource_metadata` headers are missing or stripped by a proxy, PRM (`oauth-protected-resource` JSON) is malformed or points to the wrong resource path, auth server metadata is inconsistent, token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload), different clients follow different discovery flows. This list will evolve as we add more checks
+Some boring problems that authprobe can check - `/.well-known/oauth-protected-resource` is missing at the **root**, `WWW-Authenticate` / `resource_metadata` headers are missing or stripped by a proxy, PRM (`oauth-protected-resource` JSON) is malformed or points to the wrong resource path, auth server metadata is inconsistent, token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload), different clients follow different discovery flows. This list will evolve as we add more checks
 
 ---
 
