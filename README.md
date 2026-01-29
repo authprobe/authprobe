@@ -11,6 +11,9 @@ Remote MCP servers + OAuth fail for boring reasons. Left unresolved, these may r
 
 Some boring problems that authprobe can check - `/.well-known/oauth-protected-resource` is missing at the **root**, `WWW-Authenticate` / `resource_metadata` headers are missing or stripped by a proxy, PRM (`oauth-protected-resource` JSON) is malformed or points to the wrong resource path, auth server metadata is inconsistent, token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload), different clients follow different discovery flows. This list will evolve as we add more checks
 
+AuthProbe focuses on the most failure-prone parts of MCP OAuth:
+
+For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
 ---
 
 ## Quickstart
@@ -22,16 +25,13 @@ Download the latest release binary from GitHub Releases and put it on your PATH.
 ```bash
 authprobe scan https://mcp.example.com/mcp
 ```
-
-> `matrix` is a stub command in the current v0.1 CLI and will print a "not implemented" message.
-
 ---
 
 ## What you get
 
 ### 1) Funnel view (what broke, where)
 ```text
-$ authprobe scan https://staging.example.com/mcp --profile vscode
+$ authprobe scan https://staging.example.com/mcp
 
 Funnel
   [1] MCP probe (401 + WWW-Authenticate) ............... PASS
@@ -60,16 +60,13 @@ VS Code profile highlights:
 Diagnose MCP OAuth by running a staged probe.
 
 Common flags:
-- `--profile generic|vscode|inspector` (`-p` alias)
-- `-H "Header: Value"` (repeatable)
-- `--proxy http://127.0.0.1:8080`
+- `--help`
 - `--timeout <sec>`, `--connect-timeout <sec>`, `--retries <n>`
-- `--fail-on none|low|medium|high`
 - `--verbose` (print request/response headers + bodies during scan)
 - `--explain` (print RFC 9728 rationale for each scan step)
-- `--show-trace` (print MCP probe trace)
 - `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)
 - Outputs: `--md`, `--json`, `--sarif`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
+
 
 Examples:
 ```bash
@@ -89,38 +86,6 @@ Examples:
 authprobe matrix https://mcp.example.com/mcp
 authprobe matrix https://mcp.example.com/mcp --format md
 ```
-
-## What AuthProbe checks (MCP OAuth stages)
-
-AuthProbe focuses on the most failure-prone parts of MCP OAuth:
-
-For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
-
-### Discovery (MCP → OAuth bootstrap)
-- Does the MCP endpoint respond with `401` and a usable `WWW-Authenticate` header?
-- Is there a `resource_metadata=...` pointer for PRM?
-
-### MCP initialize + tools/list
-- Does the MCP server accept `initialize` and `tools/list` after probing?
-
-### Protected Resource Metadata (PRM)
-- Is `/.well-known/oauth-protected-resource` reachable at the root?
-- Does the path-suffix variant exist when needed?
-- Does PRM include `authorization_servers`?
-- Is PRM `resource` canonical and pointing to the actual MCP endpoint path?
-
-### Authorization server metadata
-- Are metadata endpoints reachable and parseable?
-- Are critical endpoints present (authorization, token, registration when applicable)?
-
-### Token endpoint readiness (heuristics)
-- Do token responses look JSON vs form-encoded?
-- Are there provider quirks like HTTP 200 + `error` payload patterns?
-
-### Infra risk flags
-- Does behavior suggest header stripping by a proxy/WAF?
-- Is this setup likely to break under multi-instance state (warning in v0.1)?
-
 ---
 
 ## Outputs (great for CI and GitHub issues)
@@ -154,21 +119,10 @@ Typical pattern:
 
 ---
 
-## Privacy & redaction
-AuthProbe is **redaction-first**:
-- tokens/cookies are removed or fingerprinted
-- transcripts store shapes and headers needed for diagnosis
-- `--no-redact` exists only for local debugging and is **not recommended**
-
----
-
 ## FAQ
 
 ### “Is MCP OAuth really that fragile?”
 It can be. Client discovery behaviors differ, infra strips headers, `.well-known` endpoints get mounted under prefixes, and auth server behavior varies by provider. AuthProbe exists to make that failure surface deterministic.
-
-### “Can it help if OAuth succeeds but requests are still 401?”
-Yes — that’s usually token propagation vs token validation. v0.1 focuses on discovery/metadata/token readiness; later versions can add deeper token propagation checks and debug-proxy capture modes.
 
 ---
 
@@ -178,11 +132,6 @@ Contributions that help the ecosystem most:
 - new client profiles
 - new deterministic guidance examples
 - hardening redaction and report stability
-
----
-
-## Project status
-AuthProbe is currently **experimental** while the feature set and output formats stabilize.
 
 ---
 
