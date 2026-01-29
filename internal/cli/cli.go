@@ -34,8 +34,6 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runScan(args[1:], stdout, stderr)
 	case "matrix":
 		return runMatrix(args[1:], stdout, stderr)
-	case "fix":
-		return runFix(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -229,31 +227,6 @@ func runMatrix(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stdout, "matrix functionality not implemented in v0.1 stub")
-	return 0
-}
-
-func runFix(args []string, stdout, stderr io.Writer) int {
-	if hasHelp(args) {
-		fmt.Fprint(stdout, fixHelp)
-		return 0
-	}
-
-	fs := flag.NewFlagSet("fix", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.String("target", "", "")
-	fs.Bool("explain", false, "")
-
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 3
-	}
-
-	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "error: <FINDING_CODE> is required")
-		return 3
-	}
-
-	fmt.Fprintln(stdout, "fix functionality not implemented in v0.1 stub")
 	return 0
 }
 

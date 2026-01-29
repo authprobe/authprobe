@@ -2,13 +2,13 @@
 
 **Product:** AuthProbe  
 **Summary:** MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks)  
-Developer-first CLI for debugging broken MCP OAuth flows, with proof-grade evidence and copy/paste remediation.
+Developer-first CLI for debugging broken MCP OAuth flows, with proof-grade evidence and clear next-step guidance.
 
 ---
 
 ## 1) Executive summary
 
-AuthProbe is a CLI that pinpoints *where* MCP OAuth breaks (and *why*) across common client behaviors (e.g., VS Code vs Inspector-style), then generates deterministic remediation snippets and verification commands.
+AuthProbe is a CLI that pinpoints *where* MCP OAuth breaks (and *why*) across common client behaviors (e.g., VS Code vs Inspector-style), then provides deterministic findings and verification commands.
 
 ---
 
@@ -23,7 +23,7 @@ A developer building or integrating a **remote MCP server with OAuth** who is cu
 - proxy/ingress “it’s not my code” problems (header stripping, path prefixes)
 
 ### Job-to-be-done
-> “Tell me exactly what’s wrong with my MCP OAuth setup, with evidence, and give me the fastest safe fix.”
+> “Tell me exactly what’s wrong with my MCP OAuth setup, with evidence, and tell me what to do next.”
 
 ---
 
@@ -32,7 +32,7 @@ A developer building or integrating a **remote MCP server with OAuth** who is cu
 1) **Time-to-root-cause < 2 minutes** for common failures  
 2) **One primary finding** per scan (decisive, evidence-backed)  
 3) **Client compatibility matrix** across 3 profiles (generic, vscode, inspector)  
-4) **Deterministic fixes** for the most frequent failure modes (fastapi/nginx/envoy/generic)  
+4) **Deterministic guidance** for the most frequent failure modes (fastapi/nginx/envoy/generic)  
 5) **CI-ready**: stable finding codes, exit codes, severity gating, machine-readable outputs  
 6) **Redaction-by-default** for anything sensitive (tokens, cookies, secrets)
 
@@ -60,7 +60,6 @@ These are Phase 2+ .
 ### Canonical commands (must ship)
 - `authprobe scan <mcp_url>`
 - `authprobe matrix <mcp_url>`
-- `authprobe fix <FINDING_CODE> --target <fastapi|nginx|envoy|generic>`
 
 ### Helper commands (small, but recommended)
 - `authprobe profiles`
@@ -138,7 +137,7 @@ Finding codes are stable identifiers. Each finding includes:
 - severity (low/medium/high)
 - confidence (0–1)
 - evidence (sanitized)
-- remediation references (snippet IDs and verify commands)
+- next-step references (verification commands and supporting context)
 
 ### Discovery & PRM
 1) `DISCOVERY_NO_WWW_AUTHENTICATE`  
@@ -255,39 +254,7 @@ AuthProbe findings must be consistent and CI-friendly. Each finding includes:
 
 ---
 
-## 8) Remediation generator (v0.1)
-
-`authprobe fix <FINDING_CODE> --target <...>` outputs deterministic snippets and steps.
-
-### Minimum remediation coverage for v0.1
-- `DISCOVERY_ROOT_WELLKNOWN_404`
-  - FastAPI shim route (serve PRM at root)
-  - Nginx rewrite snippet
-  - Envoy route guidance
-- `DISCOVERY_NO_WWW_AUTHENTICATE`
-  - How to emit `WWW-Authenticate` correctly
-  - Nginx/Envoy header forwarding guidance
-- `PRM_MISSING_AUTHORIZATION_SERVERS`
-  - Minimal valid PRM template
-- `PRM_RESOURCE_MISMATCH`
-  - Guidance + example corrected PRM `resource`
-- `HEADER_STRIPPED_BY_PROXY_SUSPECTED`
-  - Nginx/Envoy header allow/forward snippet + verification steps
-- `PRM_HTTP_STATUS_NOT_200`, `PRM_CONTENT_TYPE_NOT_JSON`, `PRM_NOT_JSON_OBJECT`, `PRM_RESOURCE_MISSING`
-  - “Minimal valid PRM” template + debugging checklist
-- `PRM_JWKS_URI_NOT_HTTPS`, `PRM_BEARER_METHODS_INVALID`, `PRM_SIGNING_ALG_NONE_FORBIDDEN`
-  - Field constraint explanation + corrected examples
-- `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`
-  - Explain SSRF guardrail + `--allow-private-issuers` override (with caution)
-
-Every fix output MUST include:
-- snippet ID (e.g., `fix/nginx/prm_root_rewrite.conf`)
-- when to use it
-- verify command (always ends with `authprobe scan ...`)
-
----
-
-## 9) Outputs and artifacts
+## 8) Outputs and artifacts
 
 ### Stdout (developer-first)
 - Funnel view + primary finding + 3-line evidence + next best action
@@ -309,7 +276,7 @@ Every fix output MUST include:
 
 ---
 
-## 10) Security & privacy (v0.1 constraints)
+## 9) Security & privacy (v0.1 constraints)
 
 - Redaction ON by default.
 - Never store or emit full tokens/cookies/secrets in logs or bundles.
@@ -321,7 +288,7 @@ Redaction rules (baseline):
 
 ---
 
-## 11) Acceptance criteria (definition of done)
+## 10) Acceptance criteria (definition of done)
 
 ### `scan`
 - Prints funnel with PASS/FAIL/SKIP per step
@@ -336,13 +303,9 @@ Redaction rules (baseline):
 - Supports `--format table|md|json`
 - Exit respects `--fail-on`
 
-### `fix`
-- For each supported finding code + target, generates deterministic snippet
-- `--explain` adds rationale and verification commands
-
 ---
 
-## 12) Test plan (fixtures-first)
+## 11) Test plan (fixtures-first)
 
 ### Fixture format
 Each fixture includes:
@@ -376,7 +339,7 @@ Each fixture includes:
 
 ---
 
-## 13) Release packaging (v0.1)
+## 12) Release packaging (v0.1)
 
 Must ship:
 1) GitHub Releases with binaries:
@@ -399,7 +362,7 @@ Must ship:
 2) Scan funnel steps + finding engine + JSON schema  
 3) Markdown renderer + bundle exporter  
 4) Profiles + matrix orchestration  
-5) Fix generator for top codes (fastapi/nginx/envoy/generic)  
+5) Remediation guidance for top codes (fastapi/nginx/envoy/generic)  
 6) Fixtures + golden tests  
 7) Release packaging (binaries + docker + action)
 
@@ -557,41 +520,6 @@ EXAMPLES:
   authprobe matrix https://mcp.example.com/mcp --json matrix.json --bundle matrix-evidence.zip
 ```
 
-### `authprobe fix --help`
-```text
-authprobe fix: Generate remediation snippets for a specific finding code.
-
-USAGE:
-  authprobe fix <FINDING_CODE> [flags]
-
-ARGUMENTS:
-  <FINDING_CODE>           Finding code from `authprobe scan` or `authprobe matrix`.
-                           Example: DISCOVERY_ROOT_WELLKNOWN_404
-
-FLAGS:
-  -t, --target <name>      Target environment to generate a snippet for.
-                           Options: fastapi, starlette, nginx, envoy, cloudflare, generic
-                           Default: generic
-
-      --out <path>         Write the snippet to a file (stdout by default).
-      --explain            Include rationale and verification steps.
-      --smart              Use Smart Fix mode (LLM-assisted) to tailor the snippet.
-                           Requires --smart-endpoint or AUTH_PROBE_SMART_ENDPOINT env var.
-
-      --smart-endpoint <url>
-                           URL for Smart Fix backend (optional; advanced).
-      --context <path>     Optional path to config/context file (YAML/JSON/text) used by --smart.
-                           Example: ingress.yaml, nginx.conf, values.yaml
-
-EXAMPLES:
-  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target fastapi
-  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --explain
-  authprobe fix HEADER_STRIPPED_BY_PROXY_SUSPECTED --target envoy --out envoy-snippet.yaml
-  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx --smart --context ingress.yaml
-```
-
----
-
 ## 16) Appendix B — Golden example (report shape expectations)
 
 A golden Markdown report must include:
@@ -599,7 +527,7 @@ A golden Markdown report must include:
 - funnel table (steps)
 - primary finding with severity/confidence
 - evidence block with sanitized request/response facts
-- remediation snippet references + generation commands
+- next-step references + verification commands
 - verify command(s)
 
 (Use the golden example from the design discussion as the fixture reference.)
