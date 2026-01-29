@@ -44,7 +44,7 @@ Primary finding (HIGH): DISCOVERY_ROOT_WELLKNOWN_404 (confidence 0.92)
 Fix: review the finding details and apply the suggested remediation manually
 ```
 
-### 2) Client profile simulation (generic, VS Code, Inspector)
+### 2) Ensure your MCP server works with different clients (Claude, VS Code, generic, Inspector)
 Use `--profile` on `scan` to emulate client-specific discovery behavior.
 
 VS Code profile highlights:
