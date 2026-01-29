@@ -1,34 +1,15 @@
-# AuthProbe — MCP OAuth Diagnostics (scan, matrix, fix)
+# AuthProbe — MCP OAuth Diagnostics
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/authprobe/authprobe?logo=go)](https://go.dev/doc/go1.21)
-[![Pkg.go.dev](https://pkg.go.dev/badge/authprobe.svg)](https://pkg.go.dev/authprobe)
 [![Build Status](https://github.com/authprobe/authprobe/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/authprobe/authprobe/actions/workflows/go.yml)
-[![Code Coverage](https://codecov.io/gh/authprobe/authprobe/branch/main/graph/badge.svg)](https://codecov.io/gh/authprobe/authprobe)
 [![License](https://img.shields.io/github/license/authprobe/authprobe)](https://github.com/authprobe/authprobe/blob/main/LICENSE)
-[![Dependencies](https://img.shields.io/librariesio/github/authprobe/authprobe)](https://libraries.io/github/authprobe/authprobe)
 [![Security Status](https://snyk.io/test/github/authprobe/authprobe/badge.svg)](https://snyk.io/test/github/authprobe/authprobe)
-[![Project Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
 
-**AuthProbe** is a fast CLI that tells you *exactly why* **MCP OAuth** is broken.
 
-It runs a staged probe (discovery → metadata → token readiness → auth header checks) and can simulate common client styles (generic, VS Code, Inspector) to pinpoint discovery and metadata issues.
+**AuthProbe** is a tool that tells you *exactly why* **MCP OAuth** is broken.
 
-If you’ve ever stared at a mysterious `401`, a `/.well-known` 404, or an “OAuth succeeded but still unauthorized” loop… this is for you.
+Remote MCP servers + OAuth fail for boring reasons. Left unfixed, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
 
----
-
-## Why AuthProbe exists
-
-Remote MCP servers + OAuth fail for boring reasons:
-- `/.well-known/oauth-protected-resource` is missing at the **root**
-- `WWW-Authenticate` / `resource_metadata` headers are missing or stripped by a proxy
-- PRM (`oauth-protected-resource` JSON) is malformed or points to the wrong resource path
-- auth server metadata is inconsistent
-- token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload)
-- different clients follow different discovery flows
-- Verify [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728/)
-
-AuthProbe turns that chaos into a 1-page diagnosis with evidence and a concrete fix path to implement manually.
+Some boring problems that authprobe and check are - `/.well-known/oauth-protected-resource` is missing at the **root**, `WWW-Authenticate` / `resource_metadata` headers are missing or stripped by a proxy, PRM (`oauth-protected-resource` JSON) is malformed or points to the wrong resource path, auth server metadata is inconsistent, token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload), different clients follow different discovery flows. This list will evolve as we add more checks
 
 ---
 
