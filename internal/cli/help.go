@@ -120,25 +120,6 @@ EXAMPLES:
   authprobe matrix https://mcp.example.com/mcp --format md
 `
 
-const fixHelp = `authprobe fix: Generate remediation snippets for a specific finding.
-
-USAGE:
-  authprobe fix <FINDING_CODE> --target <fastapi|nginx|envoy|generic> [flags]
-
-ARGUMENTS:
-  <FINDING_CODE>           Finding code to remediate (example: DISCOVERY_ROOT_WELLKNOWN_404)
-
-FLAGS:
-      --target <name>      Target environment for the snippet.
-                           Options: fastapi, nginx, envoy, generic
-
-      --explain            Include rationale and verification commands.
-
-EXAMPLES:
-  authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx
-  authprobe fix PRM_RESOURCE_MISMATCH --target fastapi --explain
-`
-
 const rootHelp = `authprobe: MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks).
 
 USAGE:
@@ -147,7 +128,6 @@ USAGE:
 COMMANDS:
   scan       Diagnose MCP OAuth by running a staged probe.
   matrix     Run scans across client profiles and compare findings.
-  fix        Generate remediation snippets for a specific finding.
 
 Use "authprobe <command> --help" for more information about a command.
 `
