@@ -7,7 +7,7 @@
 
 **AuthProbe** is a tool that tells you *exactly why* **MCP OAuth** is broken.
 
-Remote MCP servers + OAuth fail for boring reasons. Left unfixed, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
+Remote MCP servers + OAuth fail for boring reasons. Left unresolved, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
 
 Some boring problems that authprobe can check - `/.well-known/oauth-protected-resource` is missing at the **root**, `WWW-Authenticate` / `resource_metadata` headers are missing or stripped by a proxy, PRM (`oauth-protected-resource` JSON) is malformed or points to the wrong resource path, auth server metadata is inconsistent, token endpoints behave differently than clients expect (JSON vs form-encoded, HTTP 200 + error payload), different clients follow different discovery flows. This list will evolve as we add more checks
 
@@ -23,7 +23,7 @@ Download the latest release binary from GitHub Releases and put it on your PATH.
 authprobe scan https://mcp.example.com/mcp
 ```
 
-> `matrix` and `fix` are stub commands in the current v0.1 CLI and will print a "not implemented" message.
+> `matrix` is a stub command in the current v0.1 CLI and will print a "not implemented" message.
 
 ---
 
@@ -41,7 +41,7 @@ Funnel
   [5] Token endpoint readiness (heuristics) ............ SKIP
 
 Primary finding (HIGH): DISCOVERY_ROOT_WELLKNOWN_404 (confidence 0.92)
-Fix: review the finding details and apply the suggested remediation manually
+Next steps: review the finding details and apply the suggested changes manually
 ```
 
 ### 2) Ensure your MCP server works with different clients (Claude, VS Code, generic, Inspector)
@@ -89,19 +89,6 @@ Examples:
 authprobe matrix https://mcp.example.com/mcp
 authprobe matrix https://mcp.example.com/mcp --format md
 ```
-
-### `authprobe fix <FINDING_CODE>`
-Generate a remediation snippet for a finding.
-
-> Note: `fix` is a stub in v0.1 and prints "not implemented".
-
-Examples:
-```bash
-authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target fastapi --explain
-authprobe fix DISCOVERY_ROOT_WELLKNOWN_404 --target nginx
-```
-
----
 
 ## What AuthProbe checks (MCP OAuth stages)
 
@@ -178,9 +165,6 @@ AuthProbe is **redaction-first**:
 ### “Is MCP OAuth really that fragile?”
 It can be. Client discovery behaviors differ, infra strips headers, `.well-known` endpoints get mounted under prefixes, and auth server behavior varies by provider. AuthProbe exists to make that failure surface deterministic.
 
-### “Does AuthProbe fix my system automatically?”
-Not yet. The `fix` command is currently a stub in v0.1, so AuthProbe does not generate remediation snippets automatically.
-
 ### “Can it help if OAuth succeeds but requests are still 401?”
 Yes — that’s usually token propagation vs token validation. v0.1 focuses on discovery/metadata/token readiness; later versions can add deeper token propagation checks and debug-proxy capture modes.
 
@@ -190,7 +174,7 @@ Yes — that’s usually token propagation vs token validation. v0.1 focuses on 
 Contributions that help the ecosystem most:
 - new fixtures (sanitized real-world failure traces)
 - new client profiles
-- new deterministic remediation snippets
+- new deterministic guidance examples
 - hardening redaction and report stability
 
 ---
