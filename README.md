@@ -1,15 +1,15 @@
-# AuthProbe — MCP OAuth Diagnostics
+# `authprobe` — MCP OAuth Diagnostics
 
 [![Build Status](https://github.com/authprobe/authprobe/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/authprobe/authprobe/actions/workflows/go.yml)
 [![License](https://img.shields.io/github/license/authprobe/authprobe)](https://github.com/authprobe/authprobe/blob/main/LICENSE)
 [![Security Status](https://snyk.io/test/github/authprobe/authprobe/badge.svg)](https://snyk.io/test/github/authprobe/authprobe)
 
 
-**AuthProbe** is a tool that tells you *exactly why* **MCP OAuth** is broken.
+`authprobe` is a tool that tells you *exactly why* **MCP OAuth** is broken.
 
 Remote MCP servers + OAuth fail for boring reasons. Left unresolved, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
 
-AuthProbe focuses on the most failure-prone parts of MCP OAuth. Getting MCP OAuth working well means following a bunch of specs and handling all edge cases. Miss one spec detail and you can lose days chasing “nothing’s happening” bugs. You need a reliable way to pinpoint what’s actually wrong. Is it your MCP server or your OAuth setup ? `authprobe scan <https://mcp>` lets to find the gaps
+`authprobe` focuses on the most failure-prone parts of MCP OAuth. Getting MCP OAuth working well means following a bunch of specs and handling all edge cases. Miss one spec detail and you can lose days chasing “nothing’s happening” bugs. You need a reliable way to pinpoint what’s actually wrong. Is it your MCP server or your OAuth setup ? `authprobe scan <https://mcp>` lets to find the gaps
 
 For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
 
