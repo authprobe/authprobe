@@ -140,7 +140,7 @@ type mcpToolDetail struct {
 	Annotations  map[string]any  `json:"annotations,omitempty"`
 }
 
-func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary, error) {
+func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
 	report := scanReport{
 		Target:      config.Target,
 		Profile:     config.Profile,
@@ -172,7 +172,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps := []scanStep{}
 
 	step1 := scanStep{ID: 1, Name: "MCP probe (401 + WWW-Authenticate)"}
-	resourceMetadata, resolvedTarget, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace, stdout)
+	resourceMetadata, resolvedTarget, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace, verboseOutput)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
@@ -183,7 +183,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	steps = append(steps, step1)
 
 	step2 := scanStep{ID: 2, Name: "MCP initialize + tools/list"}
-	step2Status, step2Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, stdout, authRequired)
+	step2Status, step2Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, verboseOutput, authRequired)
 	step2.Status = step2Status
 	step2.Detail = step2Detail
 	findings = append(findings, step2Findings...)
@@ -217,7 +217,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 	}
 
 	step3 := scanStep{ID: 3, Name: "PRM fetch matrix"}
-	prmResult, step3Findings, step3Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, resolvedTarget, &trace, stdout)
+	prmResult, step3Findings, step3Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, resolvedTarget, &trace, verboseOutput)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
@@ -232,7 +232,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 		step4.Status = "SKIP"
 		step4.Detail = "no authorization_servers in PRM"
 	} else {
-		step4Findings, step4Evidence, metadata := fetchAuthServerMetadata(client, config, prmResult, &trace, stdout)
+		step4Findings, step4Evidence, metadata := fetchAuthServerMetadata(client, config, prmResult, &trace, verboseOutput)
 		authMetadata = metadata
 		findings = append(findings, step4Findings...)
 		step4.Status = statusFromFindings(step4Findings, true)
@@ -245,7 +245,7 @@ func runScanFunnel(config scanConfig, stdout io.Writer) (scanReport, scanSummary
 		step5.Status = "SKIP"
 		step5.Detail = "no token_endpoint in metadata"
 	} else {
-		step5Findings, step5Evidence := probeTokenEndpointReadiness(client, config, authMetadata.TokenEndpoints, &trace, stdout)
+		step5Findings, step5Evidence := probeTokenEndpointReadiness(client, config, authMetadata.TokenEndpoints, &trace, verboseOutput)
 		findings = append(findings, step5Findings...)
 		step5.Status = statusFromFindings(step5Findings, true)
 		step5.Detail = step5Evidence
@@ -1890,6 +1890,19 @@ func renderMarkdown(report scanReport) string {
 		}
 	}
 	return md.String()
+}
+
+func appendVerboseMarkdown(md string, verbose string) string {
+	trimmed := strings.TrimSpace(verbose)
+	if trimmed == "" {
+		return md
+	}
+	var out strings.Builder
+	out.WriteString(strings.TrimRight(md, "\n"))
+	out.WriteString("\n\n## Verbose output\n\n```\n")
+	out.WriteString(trimmed)
+	out.WriteString("\n```\n")
+	return out.String()
 }
 
 func writeOutputs(report scanReport, summary scanSummary, config scanConfig) error {

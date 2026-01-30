@@ -183,10 +183,20 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	if isStdoutPath(config.JSONPath) {
 		scanStdout = io.Discard
 	}
-	report, summary, err := runScanFunnel(config, scanStdout)
+	verboseWriter := scanStdout
+	var verboseBuffer strings.Builder
+	shouldCaptureVerbose := config.Verbose && (config.MDPath != "" || config.BundlePath != "")
+	if shouldCaptureVerbose {
+		verboseWriter = io.MultiWriter(scanStdout, &verboseBuffer)
+	}
+
+	report, summary, err := runScanFunnel(config, scanStdout, verboseWriter)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 3
+	}
+	if shouldCaptureVerbose && verboseBuffer.Len() > 0 {
+		summary.MD = appendVerboseMarkdown(summary.MD, verboseBuffer.String())
 	}
 
 	if err := writeOutputs(report, summary, config); err != nil {
