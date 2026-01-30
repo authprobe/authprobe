@@ -9,7 +9,21 @@
 
 Remote MCP servers + OAuth fail for boring reasons. Left unresolved, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
 
-AuthProbe focuses on the most failure-prone parts of MCP OAuth. For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
+AuthProbe focuses on the most failure-prone parts of MCP OAuth. Getting MCP OAuth working well means following a bunch of specs and handling all edge cases. Miss one spec detail and you can lose days chasing “nothing’s happening” bugs. You need a reliable way to pinpoint what’s actually wrong. Is it your MCP server or your OAuth setup ? `authprobe scan <https://mcp>` lets to find the gaps
+
+For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
+
+Example scan output and funnel step map: [docs/scan-google-compute-mcp.md](docs/scan-google-compute-mcp.md).
+
+Relevant RFCs that make MCP OAuth complex:
+- Model Context Protocol (MCP) Specification
+- RFC 9728 — OAuth 2.0 Protected Resource Metadata
+- RFC 8414 — OAuth 2.0 Authorization Server Metadata
+- RFC 8707 — Resource Indicators for OAuth 2.0
+- RFC 7636 — Proof Key for Code Exchange by OAuth Public Clients
+- RFC 7517 — JSON Web Key (JWK)
+- RFC 3986 — Uniform Resource Identifier (URI): Generic Syntax
+- RFC 9110 — HTTP Semantics
 
 ---
 
