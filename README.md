@@ -14,6 +14,7 @@ Remote MCP servers + OAuth fail for boring reasons. Left unresolved, these may r
 For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
 
 Example scan output and funnel step map: [docs/scan-google-compute-mcp.md](docs/scan-google-compute-mcp.md).
+Example scan **verbose** output and funnel step map: [docs/scan-google-compute-mcp.md](docs/scan-google-compute-mcp-verbose.md).
 
 Relevant RFCs that make MCP OAuth complex:
 - Model Context Protocol (MCP) Specification
