@@ -98,13 +98,14 @@ func runScanForServerProfile(t *testing.T, target string, profile string) scanRe
 	t.Helper()
 	t.Logf("running profile scan: %s", profile)
 	var stdout bytes.Buffer
+	var verbose bytes.Buffer
 	report, _, err := runScanFunnel(scanConfig{
 		Target:              target,
 		Profile:             profile,
 		Timeout:             5 * time.Second,
 		RFC9728Mode:         "best-effort",
 		AllowPrivateIssuers: true,
-	}, &stdout)
+	}, &stdout, &verbose)
 	if err != nil {
 		t.Fatalf("runScanFunnel error: %v", err)
 	}
