@@ -99,27 +99,6 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp --rfc9728 strict
 `
 
-const matrixHelp = `authprobe matrix: Run scans across client profiles and compare findings.
-
-USAGE:
-  authprobe matrix <mcp_url> [flags]
-
-ARGUMENTS:
-  <mcp_url>                MCP endpoint URL (example: https://example.com/mcp)
-
-FLAGS:
-      --format <format>    Output format. Options: table, md, json
-                           Default: table
-
-      --fail-on <level>    Exit non-zero if findings at/above this severity exist.
-                           Options: none, low, medium, high
-                           Default: high
-
-EXAMPLES:
-  authprobe matrix https://mcp.example.com/mcp
-  authprobe matrix https://mcp.example.com/mcp --format md
-`
-
 const rootHelp = `authprobe: MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks).
 
 USAGE:
@@ -127,7 +106,6 @@ USAGE:
 
 COMMANDS:
   scan       Diagnose MCP OAuth by running a staged probe.
-  matrix     Run scans across client profiles and compare findings.
 
 Use "authprobe <command> --help" for more information about a command.
 `

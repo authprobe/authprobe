@@ -87,18 +87,6 @@ authprobe scan https://mcp.example.com/mcp --md report.md --json report.json --b
 authprobe scan https://mcp.example.com/mcp --json - | jq '.findings'
 ```
 
-### `authprobe matrix <mcp_url>`
-Run multiple client profiles and show divergences.
-
-> Note: `matrix` is a stub in v0.1 and prints "not implemented".
-
-Examples:
-```bash
-authprobe matrix https://mcp.example.com/mcp
-authprobe matrix https://mcp.example.com/mcp --format md
-```
----
-
 ## Outputs (great for CI and GitHub issues)
 
 ### Markdown report
