@@ -26,7 +26,7 @@ type scanConfig struct {
 	Timeout             time.Duration
 	Verbose             bool
 	Explain             bool
-	FailOn              string
+	FailOn              string // Severity threshold for exit code 2: none, low, medium, high
 	MCPMode             string
 	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
 	AllowPrivateIssuers bool

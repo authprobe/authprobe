@@ -61,6 +61,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	// Disable automatic HTTP redirect following; useful for debugging redirect chains
 	// and analyzing redirect behavior without following to final destination
 	fs.Bool("no-follow-redirects", false, "")
+	// Exit code control for CI: exit 2 if primary finding severity >= threshold.
+	// Options: none (never fail), low, medium, high (default).
 	fs.String("fail-on", "high", "")
 	fs.String("json", "", "")
 	fs.String("md", "", "")
