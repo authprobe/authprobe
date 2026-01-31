@@ -1,5 +1,14 @@
 package cli
 
+// help.go - Command help text constants
+//
+// Constants:
+// ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+// │ Constant                            │ Purpose                                                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ scanHelp                            │ Help text for the scan command                             │
+// └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
 const scanHelp = `authprobe scan: Diagnose MCP OAuth by running a staged probe (discovery → metadata → token readiness → auth header checks).
 
 USAGE:

@@ -1,5 +1,14 @@
 package cli
 
+// normalize.go - Command-line argument normalization
+//
+// Function Index:
+// ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+// │ Function                            │ Purpose                                                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ normalizeScanArgs                   │ Reorder args so flags appear before positional args        │
+// └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
 import "strings"
 
 func normalizeScanArgs(args []string) []string {

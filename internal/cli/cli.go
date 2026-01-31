@@ -1,5 +1,28 @@
 package cli
 
+// cli.go - Command-line interface entry points and flag parsing
+//
+// Function Index:
+// ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+// │ Function                            │ Purpose                                                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Run                                 │ Main entry point: routes to scan/help commands             │
+// │ runScan                             │ Execute scan command with parsed flags                     │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ isStdoutPath                        │ Check if output path is "-" (stdout)                       │
+// │ hasHelp                             │ Check if args contain help flag                            │
+// │ isHelp                              │ Check if single arg is help flag                           │
+// │ parseHeader                         │ Parse "Key: Value" header string                           │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ toolTitle                           │ Format MCP tool name with description                      │
+// │ writeVerboseHeading                 │ Write section heading for verbose output                   │
+// │ writeVerboseRequest                 │ Write HTTP request details for verbose output              │
+// │ writeVerboseResponse                │ Write HTTP response details for verbose output             │
+// │ drainBody                           │ Read and restore HTTP response body                        │
+// │ writeHeaders                        │ Write HTTP headers with prefix                             │
+// │ writeBody                           │ Write HTTP body with prefix                                │
+// └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
 import (
 	"bytes"
 	"crypto/tls"

@@ -1,5 +1,39 @@
 package cli
 
+// funnel.go - Scan funnel orchestration and step execution
+//
+// Function Index:
+// ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+// │ Function                            │ Purpose                                                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Orchestration                       │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ runScanFunnel                       │ Main entry point: run complete scan funnel                 │
+// │ newFunnel                           │ Create new funnel instance with configuration              │
+// │ (f) run                             │ Execute all funnel steps in sequence                       │
+// │ (f) getSteps                        │ Get ordered list of scan step definitions                  │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Skip Conditions                     │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ (f) skipIfMCPDisabled               │ Skip if MCP mode is off                                    │
+// │ (f) skipIfAuthNotRequired           │ Skip if auth not required (no 401)                         │
+// │ (f) skipIfNoAuthServers             │ Skip if no authorization servers found                     │
+// │ (f) skipIfNoTokenEndpoints          │ Skip if no token endpoints found                           │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Step Execution                      │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ (f) runMCPProbe                     │ Step 1: Probe MCP endpoint for 401                         │
+// │ (f) runMCPInitialize                │ Step 2: MCP initialize + tools/list                        │
+// │ (f) runPRMFetch                     │ Step 3: Fetch Protected Resource Metadata                  │
+// │ (f) runAuthServerMetadata           │ Step 4: Fetch authorization server metadata                │
+// │ (f) runTokenEndpoint                │ Step 5: Probe token endpoint readiness                     │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Result Building                     │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ (f) buildReport                     │ Construct final scan report                                │
+// │ (f) buildScanSummary                │ Construct scan summary with optional explanation           │
+// └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
 import (
 	"crypto/tls"
 	"io"

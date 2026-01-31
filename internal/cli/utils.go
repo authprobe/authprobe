@@ -1,10 +1,76 @@
 package cli
 
+// utils.go - Utility functions for scan operations
+//
+// Function Index:
+// ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+// │ Function                            │ Purpose                                                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Content Type & Mode Checks          │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ parseJSONBody                       │ Parse JSON from response body bytes                        │
+// │ isJSONContentType                   │ Check if content-type is JSON                              │
+// │ isSSEContentType                    │ Check if content-type is Server-Sent Events                │
+// │ rfcModeEnabled / rfcModeStrict      │ Check RFC conformance mode settings                        │
+// │ mcpModeEnabled / mcpModeStrict      │ Check MCP conformance mode settings                        │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ URL & Network Helpers               │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ isHTTPSURL                          │ Check if URL uses HTTPS scheme                             │
+// │ isRedirectStatus                    │ Check if HTTP status is a redirect (3xx)                   │
+// │ resolveURL                          │ Resolve relative URL against base                          │
+// │ buildPRMCandidates                  │ Build PRM discovery candidate URLs (RFC 9728)              │
+// │ buildPathSuffixCandidate            │ Build path-suffix PRM URL                                  │
+// │ buildMetadataURL                    │ Build authorization server metadata URL (RFC 8414)         │
+// │ extractResourceMetadata             │ Extract resource_metadata from WWW-Authenticate            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Validation & Security               │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ validateFetchTarget                 │ Validate URL for SSRF protection                           │
+// │ validateURLString                   │ Validate URL for RFC 3986 conformance                      │
+// │ isDisallowedIP                      │ Check if IP is private/loopback (SSRF block)               │
+// │ issuerPrivate                       │ Check if issuer URL points to private address              │
+// │ isSafeIconURI                       │ Check if icon URI uses safe scheme (https/data)            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Finding Helpers                     │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ newFinding                          │ Create finding with auto severity/confidence               │
+// │ newMCPFinding                       │ Create MCP finding (upgrades severity in strict mode)      │
+// │ newFindingWithSeverity              │ Create finding with explicit severity                      │
+// │ newFindingWithEvidence              │ Create finding with multiple evidence lines                │
+// │ findingRFCExplanation               │ Get RFC explanation text for finding code                  │
+// │ findingSeverity                     │ Get severity level for finding code                        │
+// │ findingConfidence                   │ Get confidence level for finding code                      │
+// │ choosePrimaryFinding                │ Select most important finding from list                    │
+// │ severityRank                        │ Convert severity to numeric rank for comparison            │
+// │ hasHighSeverity                     │ Check if any finding has high severity                     │
+// │ shouldFail                          │ Determine if scan should exit with failure                 │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ HTTP & Header Helpers               │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ fetchJSON                           │ HTTP GET and parse response as JSON                        │
+// │ fetchWithRedirects                  │ HTTP GET with redirect handling and SSRF checks            │
+// │ postTokenProbe                      │ POST probe to token endpoint with invalid creds            │
+// │ applySafeHeaders                    │ Apply headers filtering out sensitive ones                 │
+// │ applyHeaders                        │ Apply all headers to request                               │
+// │ findHeader                          │ Find header value (case-insensitive)                       │
+// │ checkEndpointHostMismatch           │ Check if endpoint host matches issuer                      │
+// │ addTrace                            │ Add HTTP request/response to trace log                     │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Capability Checks                   │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ supportsPing                        │ Check if MCP capabilities include ping                     │
+// │ supportsTasks                       │ Check if MCP capabilities include tasks                    │
+// │ tasksAdvertised                     │ Check if init result advertises tasks                      │
+// └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -793,4 +859,131 @@ func shouldFail(primary finding, failOn string) bool {
 		return false
 	}
 	return severityRank(primary.Severity) >= threshold
+}
+
+const maxMetadataRedirects = 5
+
+// fetchJSON performs an HTTP GET and parses the response body as JSON.
+func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, any, error) {
+	resp, body, err := fetchWithRedirects(client, config, target, trace, stdout, verboseLabel)
+	if err != nil {
+		return resp, nil, err
+	}
+	var payload any
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &payload); err != nil {
+			payload = nil
+		}
+	}
+	return resp, payload, nil
+}
+
+// fetchWithRedirects performs metadata fetches with redirect handling and policy checks (SSRF, RFC 9110).
+func fetchWithRedirects(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
+	current := target
+	if config.Verbose {
+		writeVerboseHeading(stdout, verboseLabel)
+	}
+	for redirects := 0; ; redirects++ {
+		if err := validateFetchTarget(config, current); err != nil {
+			return nil, nil, err
+		}
+		req, err := http.NewRequest(http.MethodGet, current, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := applyHeaders(req, config.Headers); err != nil {
+			return nil, nil, err
+		}
+		if config.Verbose {
+			if err := writeVerboseRequest(stdout, req); err != nil {
+				return nil, nil, err
+			}
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		if closeErr := resp.Body.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return resp, nil, err
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		if config.Verbose {
+			if err := writeVerboseResponse(stdout, resp); err != nil {
+				return resp, body, err
+			}
+		}
+		addTrace(trace, req, resp)
+		if !isRedirectStatus(resp.StatusCode) || config.NoFollowRedirects {
+			return resp, body, nil
+		}
+		location := resp.Header.Get("Location")
+		if location == "" {
+			return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("missing Location for redirect from %s", current)}
+		}
+		next, err := resolveURL(req.URL, location)
+		if err != nil {
+			return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("invalid redirect Location %q", location)}
+		}
+		if rfcModeEnabled(config.RFCMode) {
+			if !next.IsAbs() {
+				return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("redirect Location not absolute: %q", location)}
+			}
+			if rfcModeEnabled(config.RFCMode) && !isHTTPSURL(next) {
+				if rfcModeStrict(config.RFCMode) {
+					return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("redirect Location not https: %q", location)}
+				}
+			}
+		}
+		if redirects >= maxMetadataRedirects {
+			return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_LIMIT", Detail: fmt.Sprintf("redirect limit exceeded for %s", target)}
+		}
+		current = next.String()
+	}
+}
+
+// postTokenProbe sends a probe request to the token endpoint with invalid credentials.
+func postTokenProbe(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", "invalid")
+	form.Set("redirect_uri", "https://invalid.example/callback")
+	form.Set("client_id", "authprobe")
+
+	req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	if err := applySafeHeaders(req, config.Headers); err != nil {
+		return nil, nil, err
+	}
+	if config.Verbose {
+		writeVerboseHeading(stdout, verboseLabel)
+		if err := writeVerboseRequest(stdout, req); err != nil {
+			return nil, nil, err
+		}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	if config.Verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			return resp, body, err
+		}
+	}
+	addTrace(trace, req, resp)
+	return resp, body, nil
 }

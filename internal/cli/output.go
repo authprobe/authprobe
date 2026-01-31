@@ -1,5 +1,34 @@
 package cli
 
+// output.go - Output formatting and file writing for scan results
+//
+// Function Index:
+// ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+// │ Function                            │ Purpose                                                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Summary Building                    │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ buildSummary                        │ Build scanSummary with stdout, markdown, and JSON          │
+// │ buildScanExplanation                │ Generate human-readable RFC 9728 explanation               │
+// │ renderMarkdown                      │ Generate markdown report from scan results                 │
+// │ appendVerboseMarkdown               │ Append verbose output section to markdown                  │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ Text Formatting                     │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ summarizeStepDetail                 │ Format step details for console output                     │
+// │ summarizeToolsList                  │ Truncate long tool lists for display                       │
+// │ wrapText                            │ Wrap text to fit within specified width                    │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ File Output                         │                                                            │
+// ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+// │ writeOutputs                        │ Write scan results to configured output paths              │
+// │ resolveOutputPath                   │ Resolve relative path against output directory             │
+// │ writeBundle                         │ Create zip bundle with all outputs                         │
+// │ writeZipFile                        │ Write single file entry to zip archive                     │
+// │ buildTraceJSONL                     │ Convert trace entries to JSONL format                      │
+// │ ensureParentDir                     │ Create parent directory if needed                          │
+// └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
 import (
 	"archive/zip"
 	"bytes"
