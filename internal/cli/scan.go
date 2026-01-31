@@ -516,7 +516,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	findings := []finding{}
 
 	if !authRequired {
-		findings = append(findings, checkInitializeOrdering(client, config, trace, stdout)...)
+		findings = append(findings, checkInitializeOrdering(client, config, authRequired, trace, stdout)...)
 	}
 
 	initParams := map[string]any{
@@ -704,7 +704,9 @@ func sendInitializedNotification(client *http.Client, config scanConfig, session
 
 // checkInitializeOrdering verifies the server enforces initialize-before-other-methods.
 // MCP 2025-11-25: Servers MUST reject requests before initialize completes.
-func checkInitializeOrdering(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) []finding {
+// When authRequired is false (public server), severity is lowered to "info" since
+// there's no security impact - tools are already publicly accessible.
+func checkInitializeOrdering(client *http.Client, config scanConfig, authRequired bool, trace *[]traceEntry, stdout io.Writer) []finding {
 	preInitRequest := jsonRPCRequest{
 		JSONRPC: "2.0",
 		ID:      0,
@@ -720,7 +722,12 @@ func checkInitializeOrdering(client *http.Client, config scanConfig, trace *[]tr
 	if payload != nil && payload.Error != nil {
 		return nil
 	}
-	return []finding{newMCPFinding(config, "MCP_INITIALIZE_ORDERING_NOT_ENFORCED", fmt.Sprintf("pre-init tools/list status %d", resp.StatusCode))}
+	evidence := fmt.Sprintf("pre-init tools/list status %d", resp.StatusCode)
+	if authRequired {
+		return []finding{newMCPFinding(config, "MCP_INITIALIZE_ORDERING_NOT_ENFORCED", evidence)}
+	}
+	// Public server: lower severity since tools are already publicly accessible
+	return []finding{newFindingWithSeverity("MCP_INITIALIZE_ORDERING_NOT_ENFORCED", evidence, "info")}
 }
 
 // checkJSONRPCNullID verifies the server rejects null request IDs.
