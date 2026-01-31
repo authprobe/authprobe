@@ -41,6 +41,11 @@ AuthProbe should validate **OAuth Protected Resource Metadata** behavior per RFC
 - Default: **best-effort** conformance checks (fail on key MUST violations; warn on SHOULD/best-practice gaps).
 - Optional: **strict** mode for CI gates and “spec-hardening” work.
 
+### MCP 2025-11-25 spec conformance (best-effort by default)
+AuthProbe should validate key behaviors from the MCP 2025-11-25 specification (especially **Streamable HTTP** and JSON-RPC lifecycle):
+- Default: **best-effort** checks (fail on key MUST violations; warn on SHOULD/best-practice gaps).
+- Optional: **strict** mode for CI gates and “interop hardening”.
+
 ---
 
 ## 4) Non-goals (explicitly out of scope for v0.1)
@@ -129,6 +134,44 @@ When fetching authorization server metadata from `authorization_servers`, AuthPr
 - By default, block **private/loopback/link-local** issuer targets.
 - Allow override for enterprise/internal deployments via `--allow-private-issuers`.
 
+## 6.2) MCP 2025-11-25 spec checks (Streamable HTTP + JSON-RPC)
+
+AuthProbe should implement best-effort checks derived from the MCP 2025-11-25 specification with a focus on interoperability and client drift. These checks should be **safe** (no secrets) and **deterministic**.
+
+### `--mcp` modes
+- `off`: skip MCP-spec conformance checks (only OAuth/RFC9728 checks).
+- `best-effort` (default): fail on key MUST violations; warn on SHOULD/best-practice gaps.
+- `strict`: hard-fail additional deviations (CI-friendly).
+
+### Areas to validate (high value)
+
+**A) JSON-RPC base rules**
+- Invalid `id` (null) must be rejected; notifications must not include `id`.
+- Responses must echo request `id` and use correct `result`/`error` shapes.
+
+**B) Lifecycle**
+- `initialize` must occur first; client must send `notifications/initialized` after `initialize` response.
+- Version negotiation must be consistent and explicit.
+
+**C) Streamable HTTP transport**
+- POST must include correct `Accept` headers (`application/json` and `text/event-stream`).
+- POST body must be a single JSON-RPC message.
+- Notification/response bodies accepted by server should return `202 Accepted` with no body.
+- GET must use `Accept: text/event-stream`; server must reply with SSE or `405 Method Not Allowed`.
+- If server requires `MCP-Protocol-Version` and/or `MCP-Session-Id`, behavior on missing/invalid must match spec (`400`/`404` as applicable).
+- Server should validate `Origin` header (DNS rebinding defense) and return `403` on invalid origins.
+
+**D) Utilities (when implemented)**
+- `ping` returns `{}` promptly.
+- Cancellation and progress token semantics are consistent (no regressions).
+
+**E) Tools/Tasks/Schema hygiene**
+- Tool `inputSchema` must be a JSON Schema object (not null) and parseable.
+- If tasks capability is advertised, the corresponding methods exist and taskSupport rules are enforced.
+
+**F) Icon metadata safety (best-effort)**
+- Icon URIs should use safe schemes (`https:` or `data:`); warn on unsafe schemes.
+
 ---
 
 ## 7) Finding codes (v0.1 must-have)
@@ -210,6 +253,81 @@ PRM response lacks explicit caching directives (`Cache-Control`), which can caus
 20) `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`  
 Authorization server issuer resolves to a private/loopback/link-local target and was blocked (use `--allow-private-issuers` to override).
 
+### MCP 2025-11-25 conformance (additional finding codes)
+
+**JSON-RPC correctness**
+21) `JSONRPC_ID_NULL_FORBIDDEN`  
+A JSON-RPC request used `id: null` (forbidden); server/client behavior should reject per spec.
+
+22) `JSONRPC_NOTIFICATION_HAS_ID`  
+A notification included an `id` (forbidden).
+
+23) `JSONRPC_RESPONSE_ID_MISMATCH`  
+Response `id` does not match the request `id`.
+
+24) `JSONRPC_ERROR_SHAPE_INVALID`  
+Error response missing required JSON-RPC `error.code` (int) or `error.message` (string).
+
+**Lifecycle**
+25) `LIFECYCLE_INITIALIZE_NOT_FIRST`  
+Non-initialize request observed before initialize completes.
+
+26) `PROTOCOL_VERSION_NEGOTIATION_INVALID`  
+`initialize` protocol version negotiation behavior inconsistent/invalid.
+
+**Streamable HTTP**
+27) `HTTP_ACCEPT_HEADER_INCOMPLETE`  
+Missing required `Accept` values (`application/json` and `text/event-stream`) for POST.
+
+28) `HTTP_POST_BODY_NOT_SINGLE_JSONRPC`  
+POST body is not a single JSON-RPC message object.
+
+29) `HTTP_202_REQUIRED_FOR_NOTIFICATION_RESPONSE`  
+Server accepted a notification/response POST but did not return `202 Accepted` with empty body.
+
+30) `HTTP_GET_NOT_SSE_OR_405`  
+GET did not return `text/event-stream` and was not `405 Method Not Allowed`.
+
+31) `HTTP_PROTOCOL_VERSION_HEADER_MISSING`  
+Missing required `MCP-Protocol-Version` on subsequent requests.
+
+32) `HTTP_PROTOCOL_VERSION_UNSUPPORTED`  
+Server rejected a protocol version in a way that does not match the spec’s HTTP semantics (expect `400`).
+
+33) `SESSION_ID_NON_ASCII`  
+`MCP-Session-Id` contains non-visible-ASCII characters.
+
+34) `SESSION_ID_REQUIRED_BUT_NOT_ENFORCED`  
+Server behavior suggests session id is required but error handling is inconsistent.
+
+35) `HTTP_ORIGIN_NOT_VALIDATED`  
+Server accepts requests with invalid `Origin` without returning `403` (DNS rebinding defense gap).
+
+**Utilities**
+36) `PING_RESULT_NOT_EMPTY_OBJECT`  
+`ping` returned a non-empty result (should be `{}`).
+
+**Tools/Tasks/Schema**
+37) `TOOL_INPUT_SCHEMA_NULL_FORBIDDEN`  
+`tools/list` returned a tool with null/absent `inputSchema` where schema is required.
+
+38) `TOOL_INPUT_SCHEMA_INVALID`  
+`inputSchema` is not a valid JSON Schema object (parse/shape failure).
+
+39) `TASKS_CAPABILITY_DECLARED_BUT_METHOD_MISSING`  
+Server declares tasks capability but required task methods are missing/unimplemented.
+
+40) `TOOL_TASK_SUPPORT_REQUIRED_NOT_ENFORCED`  
+Tool advertises task support `required` but server accepts non-task execution (or vice-versa).
+
+**Icons (best-effort)**
+41) `ICON_URI_UNSAFE_SCHEME`  
+Icon URI uses unsafe/unsupported scheme (e.g., `javascript:`, `file:`).
+
+**SSE resumability (best-effort)**
+42) `SSE_LAST_EVENT_ID_RESUME_VIOLATION`  
+Server violates resumption semantics with `Last-Event-ID` (replay/broadcast mismatch).
+
 ---
 
 ## 7.1) Severity and confidence rules (v0.1)
@@ -251,6 +369,34 @@ AuthProbe findings must be consistent and CI-friendly. Each finding includes:
 - **0.60–0.80**: heuristic risk patterns (token endpoint readiness warnings).
 
 **Primary finding selection rule (unchanged):** choose the highest-severity finding; tie-break by highest confidence.
+
+### MCP 2025-11-25 severity mapping additions
+
+**HIGH**
+- `JSONRPC_ID_NULL_FORBIDDEN`
+- `JSONRPC_NOTIFICATION_HAS_ID`
+- `JSONRPC_RESPONSE_ID_MISMATCH`
+- `JSONRPC_ERROR_SHAPE_INVALID`
+- `LIFECYCLE_INITIALIZE_NOT_FIRST`
+- `PROTOCOL_VERSION_NEGOTIATION_INVALID`
+- `HTTP_ACCEPT_HEADER_INCOMPLETE`
+- `HTTP_POST_BODY_NOT_SINGLE_JSONRPC`
+- `HTTP_202_REQUIRED_FOR_NOTIFICATION_RESPONSE`
+- `HTTP_GET_NOT_SSE_OR_405`
+- `HTTP_PROTOCOL_VERSION_HEADER_MISSING`
+- `HTTP_PROTOCOL_VERSION_UNSUPPORTED`
+- `SESSION_ID_NON_ASCII`
+- `HTTP_ORIGIN_NOT_VALIDATED`
+- `TOOL_INPUT_SCHEMA_NULL_FORBIDDEN`
+- `TOOL_INPUT_SCHEMA_INVALID`
+- `TASKS_CAPABILITY_DECLARED_BUT_METHOD_MISSING`
+- `TOOL_TASK_SUPPORT_REQUIRED_NOT_ENFORCED`
+
+**MEDIUM**
+- `PING_RESULT_NOT_EMPTY_OBJECT`
+- `SESSION_ID_REQUIRED_BUT_NOT_ENFORCED`
+- `ICON_URI_UNSAFE_SCHEME`
+- `SSE_LAST_EVENT_ID_RESUME_VIOLATION`
 
 ---
 
@@ -440,6 +586,12 @@ FLAGS:
                            Allow fetching authorization server metadata from private/loopback/link-local issuers.
                            (Use only in trusted networks.)
 
+
+      --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
+                           Options: off, best-effort, strict
+                           Default: best-effort
+
+
       --insecure           Allow invalid TLS certificates (dev only).
       --no-follow-redirects
                            Do not follow HTTP redirects.
@@ -465,6 +617,7 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
   authprobe scan https://mcp.example.com/mcp --rfc9728 strict
+  authprobe scan https://mcp.example.com/mcp --mcp strict
 ```
 
 ### `authprobe matrix --help`
@@ -485,6 +638,11 @@ FLAGS:
   -H, --header <k:v>       Add a request header (repeatable).
       --proxy <url>        HTTP(S) proxy for outbound requests.
       --timeout <sec>      Overall timeout per profile in seconds. Default: 60
+
+
+      --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
+                           Options: off, best-effort, strict
+                           Default: best-effort
 
       --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
                            Options: off, best-effort, strict
@@ -654,3 +812,4 @@ Downstream tooling can gate execution on **Fail** results.
 - **Zero** acceptance of metadata with issuer/resource mismatch (per RFC 8414 / RFC 9728).
 - SSRF hardening: **no** fetches to internal/special-purpose ranges; **no** redirect-based bypasses.
 - High compatibility: major providers (Google, Microsoft, Okta, etc.) validate without host-coincidence false positives (**Warn-only**).
+
