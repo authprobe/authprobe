@@ -77,17 +77,28 @@ type traceEntry struct {
 	Headers   map[string]string `json:"headers,omitempty"`
 }
 
-func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
-	report := scanReport{
-		Target:    config.Target,
-		MCPMode:   config.MCPMode,
-		RFCMode:   config.RFCMode,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	}
+// funnel orchestrates the scan steps and holds shared state.
+type funnel struct {
+	client        *http.Client
+	config        scanConfig
+	trace         []traceEntry
+	stdout        io.Writer
+	verboseOutput io.Writer
 
+	// Results accumulated from steps
+	findings         []finding
+	steps            []scanStep
+	resourceMetadata string
+	resolvedTarget   string
+	authRequired     bool
+	prmResult        prmResult
+	authMetadata     authServerMetadataResult
+}
+
+// newFunnel creates a new funnel instance with the given configuration.
+func newFunnel(config scanConfig, stdout, verboseOutput io.Writer) *funnel {
 	client := &http.Client{Timeout: config.Timeout}
 	if config.Insecure {
-		// Skip TLS certificate verification (dev/testing only)
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
@@ -98,103 +109,219 @@ func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer)
 		}
 	}
 
-	trace := []traceEntry{}
-	findings := []finding{}
-	steps := []scanStep{}
+	return &funnel{
+		client:        client,
+		config:        config,
+		trace:         []traceEntry{},
+		stdout:        stdout,
+		verboseOutput: verboseOutput,
+		findings:      []finding{},
+		steps:         []scanStep{},
+	}
+}
 
-	step1 := scanStep{ID: 1, Name: "MCP probe (401 + WWW-Authenticate)"}
-	resourceMetadata, resolvedTarget, step1Findings, step1Evidence, authRequired, err := probeMCP(client, config, &trace, verboseOutput)
+// stepDef defines a single step in the scan funnel.
+type stepDef struct {
+	ID   int
+	Name string
+	Desc string // One-line description for comments/docs
+	Skip func(f *funnel) (bool, string)
+	Run  func(f *funnel) (string, string, []finding, error)
+}
+
+// getSteps returns the ordered list of scan steps.
+func (f *funnel) getSteps() []stepDef {
+	return []stepDef{
+		{
+			ID:   1,
+			Name: "MCP probe (401 + WWW-Authenticate)",
+			Desc: "Probe the MCP endpoint with GET to check for 401 + WWW-Authenticate with resource_metadata",
+			Skip: nil, // Always runs
+			Run:  (*funnel).runMCPProbe,
+		},
+		{
+			ID:   2,
+			Name: "MCP initialize + tools/list",
+			Desc: "Perform MCP JSON-RPC initialize handshake and tools/list to verify protocol conformance",
+			Skip: (*funnel).skipIfMCPDisabled,
+			Run:  (*funnel).runMCPInitialize,
+		},
+		{
+			ID:   3,
+			Name: "PRM fetch matrix",
+			Desc: "Fetch OAuth Protected Resource Metadata (RFC 9728) from .well-known endpoints",
+			Skip: (*funnel).skipIfAuthNotRequired,
+			Run:  (*funnel).runPRMFetch,
+		},
+		{
+			ID:   4,
+			Name: "Auth server metadata",
+			Desc: "Fetch Authorization Server Metadata (RFC 8414) for each authorization_server in PRM",
+			Skip: (*funnel).skipIfNoAuthServers,
+			Run:  (*funnel).runAuthServerMetadata,
+		},
+		{
+			ID:   5,
+			Name: "Token endpoint readiness (heuristics)",
+			Desc: "Probe token endpoints with empty POST to verify they respond (heuristic readiness check)",
+			Skip: (*funnel).skipIfNoTokenEndpoints,
+			Run:  (*funnel).runTokenEndpoint,
+		},
+	}
+}
+
+// Skip condition methods
+
+func (f *funnel) skipIfMCPDisabled() (bool, string) {
+	if !mcpModeEnabled(f.config.MCPMode) {
+		return true, "mcp checks disabled"
+	}
+	return false, ""
+}
+
+func (f *funnel) skipIfAuthNotRequired() (bool, string) {
+	if !f.authRequired {
+		return true, "auth not required"
+	}
+	return false, ""
+}
+
+func (f *funnel) skipIfNoAuthServers() (bool, string) {
+	if !f.authRequired {
+		return true, "auth not required"
+	}
+	if len(f.prmResult.AuthorizationServers) == 0 {
+		return true, "no authorization_servers in PRM"
+	}
+	return false, ""
+}
+
+func (f *funnel) skipIfNoTokenEndpoints() (bool, string) {
+	if !f.authRequired {
+		return true, "auth not required"
+	}
+	if len(f.authMetadata.TokenEndpoints) == 0 {
+		return true, "no token_endpoint in metadata"
+	}
+	return false, ""
+}
+
+// Step execution methods
+
+// runMCPProbe probes the MCP endpoint with GET to check for 401 + WWW-Authenticate with resource_metadata.
+func (f *funnel) runMCPProbe() (string, string, []finding, error) {
+	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(f.client, f.config, &f.trace, f.verboseOutput)
 	if err != nil {
-		return report, scanSummary{}, err
+		return "", "", nil, err
 	}
-	findings = append(findings, step1Findings...)
-	step1.Status = statusFromFindings(step1Findings, authRequired)
-	step1.Detail = step1Evidence
-	steps = append(steps, step1)
+	f.resourceMetadata = resourceMetadata
+	f.resolvedTarget = resolvedTarget
+	f.authRequired = authRequired
+	status := statusFromFindings(findings, authRequired)
+	return status, evidence, findings, nil
+}
 
-	step2 := scanStep{ID: 2, Name: "MCP initialize + tools/list"}
-	if !mcpModeEnabled(config.MCPMode) {
-		step2.Status = "SKIP"
-		step2.Detail = "mcp checks disabled"
-	} else {
-		step2Status, step2Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, verboseOutput, authRequired)
-		step2.Status = step2Status
-		step2.Detail = step2Detail
-		findings = append(findings, step2Findings...)
+// runMCPInitialize performs MCP JSON-RPC initialize handshake and tools/list.
+func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
+	status, detail, findings := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
+	return status, detail, findings, nil
+}
+
+// runPRMFetch fetches OAuth Protected Resource Metadata (RFC 9728).
+func (f *funnel) runPRMFetch() (string, string, []finding, error) {
+	result, findings, evidence, err := fetchPRMMatrix(f.client, f.config, f.resourceMetadata, f.resolvedTarget, &f.trace, f.verboseOutput)
+	if err != nil {
+		return "", "", nil, err
 	}
-	steps = append(steps, step2)
+	f.prmResult = result
+	status := statusFromFindings(findings, true)
+	return status, evidence, findings, nil
+}
 
-	if !authRequired {
-		steps = append(steps, scanStep{ID: 3, Name: "PRM fetch matrix", Status: "SKIP", Detail: "auth not required"})
-		steps = append(steps, scanStep{ID: 4, Name: "Auth server metadata", Status: "SKIP", Detail: "auth not required"})
-		steps = append(steps, scanStep{ID: 5, Name: "Token endpoint readiness (heuristics)", Status: "SKIP", Detail: "auth not required"})
-		report.Steps = steps
-		report.Findings = findings
-		report.PrimaryFinding = choosePrimaryFinding(findings)
-		summary := buildSummary(report)
-		if config.Explain {
-			explanation := buildScanExplanation(config, resourceMetadata, prmResult{}, authRequired)
-			if explanation != "" {
-				summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+// runAuthServerMetadata fetches Authorization Server Metadata (RFC 8414).
+func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
+	findings, evidence, metadata := fetchAuthServerMetadata(f.client, f.config, f.prmResult, &f.trace, f.verboseOutput)
+	f.authMetadata = metadata
+	status := statusFromFindings(findings, true)
+	return status, evidence, findings, nil
+}
+
+// runTokenEndpoint probes token endpoints with empty POST.
+func (f *funnel) runTokenEndpoint() (string, string, []finding, error) {
+	findings, evidence := probeTokenEndpointReadiness(f.client, f.config, f.authMetadata.TokenEndpoints, &f.trace, f.verboseOutput)
+	status := statusFromFindings(findings, true)
+	return status, evidence, findings, nil
+}
+
+// run executes all funnel steps and returns the completed report.
+func (f *funnel) run() error {
+	for _, stepDef := range f.getSteps() {
+		step := scanStep{ID: stepDef.ID, Name: stepDef.Name}
+
+		// Check if step should be skipped
+		if stepDef.Skip != nil {
+			if shouldSkip, skipReason := stepDef.Skip(f); shouldSkip {
+				step.Status = "SKIP"
+				step.Detail = skipReason
+				f.steps = append(f.steps, step)
+				continue
 			}
 		}
-		summary.Trace = trace
-		if _, err := stdout.Write([]byte(summary.Stdout)); err != nil {
-			return report, scanSummary{}, err
+
+		// Run the step
+		status, detail, findings, err := stepDef.Run(f)
+		if err != nil {
+			return err
 		}
-		return report, summary, nil
-	}
 
-	step3 := scanStep{ID: 3, Name: "PRM fetch matrix"}
-	prmResult, step3Findings, step3Evidence, err := fetchPRMMatrix(client, config, resourceMetadata, resolvedTarget, &trace, verboseOutput)
-	if err != nil {
-		return report, scanSummary{}, err
+		step.Status = status
+		step.Detail = detail
+		f.findings = append(f.findings, findings...)
+		f.steps = append(f.steps, step)
 	}
-	findings = append(findings, step3Findings...)
-	step3.Status = statusFromFindings(step3Findings, true)
-	step3.Detail = step3Evidence
-	steps = append(steps, step3)
+	return nil
+}
 
-	step4 := scanStep{ID: 4, Name: "Auth server metadata"}
-	authMetadata := authServerMetadataResult{}
-	if len(prmResult.AuthorizationServers) == 0 {
-		step4.Status = "SKIP"
-		step4.Detail = "no authorization_servers in PRM"
-	} else {
-		step4Findings, step4Evidence, metadata := fetchAuthServerMetadata(client, config, prmResult, &trace, verboseOutput)
-		authMetadata = metadata
-		findings = append(findings, step4Findings...)
-		step4.Status = statusFromFindings(step4Findings, true)
-		step4.Detail = step4Evidence
+// buildReport constructs the final scan report.
+func (f *funnel) buildReport() scanReport {
+	return scanReport{
+		Target:         f.config.Target,
+		MCPMode:        f.config.MCPMode,
+		RFCMode:        f.config.RFCMode,
+		Timestamp:      time.Now().UTC().Format(time.RFC3339),
+		Steps:          f.steps,
+		Findings:       f.findings,
+		PrimaryFinding: choosePrimaryFinding(f.findings),
 	}
-	steps = append(steps, step4)
+}
 
-	step5 := scanStep{ID: 5, Name: "Token endpoint readiness (heuristics)"}
-	if len(authMetadata.TokenEndpoints) == 0 {
-		step5.Status = "SKIP"
-		step5.Detail = "no token_endpoint in metadata"
-	} else {
-		step5Findings, step5Evidence := probeTokenEndpointReadiness(client, config, authMetadata.TokenEndpoints, &trace, verboseOutput)
-		findings = append(findings, step5Findings...)
-		step5.Status = statusFromFindings(step5Findings, true)
-		step5.Detail = step5Evidence
-	}
-	steps = append(steps, step5)
-
-	report.Steps = steps
-	report.Findings = findings
-	report.PrimaryFinding = choosePrimaryFinding(findings)
+// buildScanSummary constructs the scan summary with optional explanation.
+func (f *funnel) buildScanSummary(report scanReport) scanSummary {
 	summary := buildSummary(report)
-	if config.Explain {
-		explanation := buildScanExplanation(config, resourceMetadata, prmResult, authRequired)
+	if f.config.Explain {
+		explanation := buildScanExplanation(f.config, f.resourceMetadata, f.prmResult, f.authRequired)
 		if explanation != "" {
 			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
 		}
 	}
-	summary.Trace = trace
+	summary.Trace = f.trace
+	return summary
+}
+
+func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
+	f := newFunnel(config, stdout, verboseOutput)
+
+	if err := f.run(); err != nil {
+		return scanReport{}, scanSummary{}, err
+	}
+
+	report := f.buildReport()
+	summary := f.buildScanSummary(report)
+
 	if _, err := stdout.Write([]byte(summary.Stdout)); err != nil {
 		return report, scanSummary{}, err
 	}
+
 	return report, summary, nil
 }
 
