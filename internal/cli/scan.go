@@ -1571,7 +1571,7 @@ func validateFetchTarget(config scanConfig, target string) error {
 	if config.AllowPrivateIssuers {
 		return nil
 	}
-	if !rfcModeEnabled(config.RFCMode) && !rfcModeEnabled(config.RFCMode) {
+	if !rfcModeEnabled(config.RFCMode) {
 		return nil
 	}
 	parsed, err := url.Parse(target)
