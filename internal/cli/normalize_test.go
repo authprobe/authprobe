@@ -158,6 +158,46 @@ func TestNormalizeScanArgs(t *testing.T) {
 			args: []string{"https://example.com", "--allow-private-issuers"},
 			want: []string{"--allow-private-issuers", "https://example.com"},
 		},
+		{
+			name: "value flag before URL does not consume URL",
+			args: []string{"https://example.com", "--md"},
+			want: []string{"--md", "https://example.com"},
+		},
+		{
+			name: "value flag with proper value before URL",
+			args: []string{"https://example.com", "--md", "report.md"},
+			want: []string{"--md", "report.md", "https://example.com"},
+		},
+		{
+			name: "value flag with dash value before URL",
+			args: []string{"https://example.com", "--md", "-"},
+			want: []string{"--md", "-", "https://example.com"},
+		},
+		{
+			name: "json flag before URL does not consume URL",
+			args: []string{"https://example.com", "--json"},
+			want: []string{"--json", "https://example.com"},
+		},
+		{
+			name: "json flag with dash value before URL",
+			args: []string{"https://example.com", "--json", "-"},
+			want: []string{"--json", "-", "https://example.com"},
+		},
+		{
+			name: "bundle flag before URL does not consume URL",
+			args: []string{"https://example.com", "--bundle"},
+			want: []string{"--bundle", "https://example.com"},
+		},
+		{
+			name: "output-dir flag before URL does not consume URL",
+			args: []string{"https://example.com", "--output-dir"},
+			want: []string{"--output-dir", "https://example.com"},
+		},
+		{
+			name: "multiple value flags without values before URL",
+			args: []string{"https://example.com", "--md", "--json", "--verbose"},
+			want: []string{"--md", "--json", "--verbose", "https://example.com"},
+		},
 	}
 
 	for _, tt := range tests {

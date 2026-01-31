@@ -43,17 +43,39 @@ authprobe scan https://mcp.example.com/mcp
 
 ### 1) Funnel view (what broke, where)
 ```text
-$ authprobe scan https://staging.example.com/mcp
+Command:   authprobe scan https://compute.googleapis.com/mcp
+Scanning:  https://compute.googleapis.com/mcp
+Scan time: Jan 31, 2026 21:17:09 UTC
 
 Funnel
-  [1] MCP probe (401 + WWW-Authenticate) ............... PASS
-  [2] MCP initialize + tools/list ...................... PASS
-  [3] PRM fetch matrix ................................. FAIL (404)
-  [4] Auth server metadata ............................. SKIP
-  [5] Token endpoint readiness (heuristics) ............ SKIP
+  [1] MCP probe (401 + WWW-Authenticate)     [+] PASS
+        probe returned 405; continuing discovery
 
-Primary finding (HIGH): DISCOVERY_ROOT_WELLKNOWN_404 (confidence 0.92)
-Next steps: review the finding details and apply the suggested changes manually
+  [2] MCP initialize + tools/list            [+] PASS
+        initialize -> 200
+        notifications/initialized -> 202
+        tools/list -> 200 (tools: create_instance, delete_instance,
+        start_instance, stop_instance, +25 more)
+
+  [3] PRM fetch matrix                       [+] PASS
+        https://compute.googleapis.com/.well-known/oauth-protected-resource ->
+        404
+        https://compute.googleapis.com/.well-known/oauth-protected-resource/mcp
+        -> 200
+
+  [4] Auth server metadata                   [X] FAIL
+        https://accounts.google.com/.well-known/oauth-authorization-server ->
+        200
+
+  [5] Token endpoint readiness (heuristics)  [-] SKIP
+        no token_endpoint in metadata
+
+Primary finding (HIGH): AUTH_SERVER_ISSUER_MISMATCH (confidence 1.00)
+  Evidence:
+      issuer mismatch: metadata issuer "https://accounts.google.com", expected
+      "https://accounts.google.com/"
+      RFC 8414 requires the metadata issuer to exactly match the issuer used for discovery.
+exit status 2
 ```
 
 ## Core commands
@@ -75,7 +97,7 @@ Common flags:
 - `-e`, `--explain` (print RFC rationale for each scan step)
 - `-l`, `--tool-list` (print MCP tool names)
 - `-d`, `--tool-detail <name>` (print a single MCP tool's full JSON definition)
-- Outputs: `--md`, `--json`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
+- Outputs: `--md`, `--json`, `--bundle`, `--output-dir` (use `-` for stdout, e.g., `--json -` or `--md -`)
 
 
 Examples:

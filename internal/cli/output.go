@@ -45,30 +45,31 @@ import (
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
 	if report.Command != "" {
-		fmt.Fprintf(&out, "%s\n\n", report.Command)
+		fmt.Fprintf(&out, "%-10s %s\n", "Command:", report.Command)
 	}
-	fmt.Fprintf(&out, "Scanning:  %s\n", report.Target)
-	fmt.Fprintf(&out, "Scan time: %s\n", formatHumanTime(report.Timestamp))
-	fmt.Fprintln(&out, "Funnel")
+	fmt.Fprintf(&out, "%-10s %s\n", "Scanning:", report.Target)
+	fmt.Fprintf(&out, "%-10s %s\n", "Scan time:", formatHumanTime(report.Timestamp))
+	fmt.Fprintln(&out, "\nFunnel")
 	maxLabel := 0
-	maxStatus := 0
 	for _, step := range report.Steps {
 		label := fmt.Sprintf("  [%d] %s", step.ID, step.Name)
 		if len(label) > maxLabel {
 			maxLabel = len(label)
 		}
-		if len(step.Status) > maxStatus {
-			maxStatus = len(step.Status)
-		}
 	}
-	for _, step := range report.Steps {
+	for i, step := range report.Steps {
 		label := fmt.Sprintf("  [%d] %s", step.ID, step.Name)
-		fmt.Fprintf(&out, "%-*s  %-*s\n", maxLabel, label, maxStatus, step.Status)
+		indicator := statusIndicator(step.Status)
+		fmt.Fprintf(&out, "%-*s  %s %s\n", maxLabel, label, indicator, step.Status)
 		if strings.TrimSpace(step.Detail) != "" {
-			detailLines := summarizeStepDetail(step.Detail, 6, 96-6)
+			detailLines := summarizeStepDetail(step.Detail, 4, 72)
 			for _, line := range detailLines {
-				fmt.Fprintf(&out, "      %s\n", line)
+				fmt.Fprintf(&out, "        %s\n", line)
 			}
+		}
+		// Add blank line between steps for readability (except after last step)
+		if i < len(report.Steps)-1 {
+			fmt.Fprintln(&out)
 		}
 	}
 	if report.PrimaryFinding.Code != "" {
@@ -177,6 +178,20 @@ func formatHumanTime(timestamp string) string {
 		return timestamp
 	}
 	return t.Format("Jan 02, 2006 15:04:05 UTC")
+}
+
+// statusIndicator returns a visual indicator for the step status.
+func statusIndicator(status string) string {
+	switch status {
+	case "PASS":
+		return "[+]"
+	case "FAIL":
+		return "[X]"
+	case "SKIP":
+		return "[-]"
+	default:
+		return "[?]"
+	}
 }
 
 // buildScanExplanation generates a human-readable explanation of the scan process.

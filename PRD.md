@@ -530,8 +530,8 @@ FLAGS:
                            Default: high
 
 OUTPUTS:
-      --json <path>        Write structured JSON report to file.
-      --md <path>          Write Markdown report to file.
+      --json <path>        Write structured JSON report to file. Use "-" for stdout.
+      --md <path>          Write Markdown report to file. Use "-" for stdout.
       --bundle <path>      Write sanitized evidence bundle (zip) to file.
       --output-dir <dir>   Write all requested outputs into a directory.
 
@@ -543,6 +543,7 @@ DIAGNOSTICS:
 
 EXAMPLES:
   authprobe scan https://mcp.example.com/mcp
+  authprobe scan https://mcp.example.com/mcp --json -
   authprobe scan https://mcp.example.com/mcp --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
