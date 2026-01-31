@@ -40,10 +40,10 @@ OUTPUTS:
       --output-dir <dir>   Write all requested outputs into a directory.
 
 DIAGNOSTICS:
-      --verbose            Verbose logs (includes request/response headers + bodies).
-      --explain            Print an RFC rationale for each scan step.
-      --tool-list          Print MCP tool names with their titles (from tools/list).
-      --tool-detail <name> Print a single MCP tool's full JSON definition.
+  -v, --verbose            Verbose logs (includes request/response headers + bodies).
+  -e, --explain            Print an RFC rationale for each scan step.
+  -l, --tool-list          Print MCP tool names with their titles (from tools/list).
+  -d, --tool-detail <name> Print a single MCP tool's full JSON definition.
 
 EXAMPLES:
   authprobe scan https://mcp.example.com/mcp

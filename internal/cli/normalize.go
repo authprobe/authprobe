@@ -4,17 +4,18 @@ import "strings"
 
 func normalizeScanArgs(args []string) []string {
 	valueFlags := map[string]struct{}{
-		"-H":                {},
-		"--header":          {},
-		"--timeout":         {},
-		"--mcp":             {},
-		"--rfc":             {},
-		"--fail-on":         {},
-		"--json":            {},
-		"--md":              {},
-		"--bundle":          {},
-		"--output-dir":      {},
-		"--tool-detail":     {},
+		"-H":            {},
+		"--header":      {},
+		"--timeout":     {},
+		"--mcp":         {},
+		"--rfc":         {},
+		"--fail-on":     {},
+		"--json":        {},
+		"--md":          {},
+		"--bundle":      {},
+		"--output-dir":  {},
+		"-d":            {},
+		"--tool-detail": {},
 	}
 
 	flags := make([]string, 0, len(args))

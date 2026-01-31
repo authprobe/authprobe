@@ -68,9 +68,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.String("bundle", "", "")
 	fs.String("output-dir", "", "")
 	verbose := fs.Bool("verbose", false, "")
+	fs.BoolVar(verbose, "v", false, "")
 	explain := fs.Bool("explain", false, "")
+	fs.BoolVar(explain, "e", false, "")
 	toolList := fs.Bool("tool-list", false, "")
+	fs.BoolVar(toolList, "l", false, "")
 	toolDetail := fs.String("tool-detail", "", "")
+	fs.StringVar(toolDetail, "d", "", "")
 
 	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
