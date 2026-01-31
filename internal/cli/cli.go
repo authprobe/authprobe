@@ -48,8 +48,6 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var headers stringSlice
-	profile := fs.String("profile", "generic", "")
-	fs.StringVar(profile, "p", "generic", "")
 	fs.Var(&headers, "header", "")
 	fs.Var(&headers, "H", "")
 	fs.String("proxy", "", "")
@@ -86,7 +84,6 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 
 	config := scanConfig{
 		Target:              fs.Arg(0),
-		Profile:             *profile,
 		Headers:             headers,
 		Timeout:             time.Duration(*timeout) * time.Second,
 		Verbose:             *verbose,

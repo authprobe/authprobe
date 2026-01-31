@@ -9,10 +9,6 @@ ARGUMENTS:
   <mcp_url>                MCP endpoint URL (example: https://example.com/mcp)
 
 FLAGS:
-  -p, --profile <name>     Client behavior profile to simulate.
-                           Options: generic, vscode, inspector
-                           Default: generic
-
   -H, --header <k:v>       Add a request header (repeatable).
                            Example: -H "Host: internal.example.com"
 
@@ -60,7 +56,7 @@ DIAGNOSTICS:
 
 EXAMPLES:
   authprobe scan https://mcp.example.com/mcp
-  authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
+  authprobe scan https://mcp.example.com/mcp --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
   authprobe scan https://mcp.example.com/mcp --rfc strict

@@ -8,7 +8,7 @@ Developer-first CLI for debugging broken MCP OAuth flows, with proof-grade evide
 
 ## 1) Executive summary
 
-AuthProbe is a CLI that pinpoints *where* MCP OAuth breaks (and *why*) across common client behaviors (e.g., VS Code vs Inspector-style), then provides deterministic findings and verification commands.
+AuthProbe is a CLI that pinpoints *where* MCP OAuth breaks (and *why*), then provides deterministic findings and verification commands.
 
 ---
 
@@ -31,10 +31,8 @@ A developer building or integrating a **remote MCP server with OAuth** who is cu
 
 1) **Time-to-root-cause < 2 minutes** for common failures  
 2) **One primary finding** per scan (decisive, evidence-backed)  
-3) **Client compatibility matrix** across 3 profiles (generic, vscode, inspector)  
-4) **Deterministic guidance** for the most frequent failure modes (fastapi/nginx/envoy/generic)  
-5) **CI-ready**: stable finding codes, exit codes, severity gating, machine-readable outputs  
-6) **Redaction-by-default** for anything sensitive (tokens, cookies, secrets)
+3) **CI-ready**: stable finding codes, exit codes, severity gating, machine-readable outputs  
+4) **Redaction-by-default** for anything sensitive (tokens, cookies, secrets)
 
 ### RFC 9728 conformance (v0.1)
 AuthProbe should validate **OAuth Protected Resource Metadata** behavior per RFC 9728 in a way that’s useful to developers:
@@ -64,16 +62,9 @@ These are Phase 2+ .
 
 ### Canonical commands (must ship)
 - `authprobe scan <mcp_url>`
-- `authprobe matrix <mcp_url>`
 
 ### Helper commands (small, but recommended)
-- `authprobe profiles`
 - `authprobe explain <FINDING_CODE>`
-
-### Profiles (minimum set)
-- `generic` — spec-forward baseline
-- `vscode` — root `/.well-known` sensitivity and common direct discovery behavior
-- `inspector` — probe-first / header-driven discovery tolerance
 
 ---
 
@@ -124,8 +115,8 @@ AuthProbe should implement explicit RFC 9728 checks for:
 - **Anti-impersonation** (`resource` equality rules)
 - **TLS and SSRF guardrails** when following `authorization_servers`
 
-### `--rfc9728` modes
-- `off`: skip RFC 9728-specific checks (only core MCP/OAuth checks).
+### `--rfc` modes
+- `off`: skip RFC-specific checks (only core MCP/OAuth checks).
 - `best-effort` (default): fail on key MUST violations; warn on SHOULD/best-practice gaps.
 - `strict`: fail on all MUST violations + escalate key SHOULD gaps to failures (CI-friendly).
 
@@ -204,7 +195,7 @@ Auth server metadata fetched but invalid/missing critical endpoints.
 
 ### Token endpoint readiness (heuristics)
 7) `TOKEN_RESPONSE_NOT_JSON_RISK`  
-Token endpoint behavior suggests form-encoded responses likely; warn when profile expects JSON.
+Token endpoint behavior suggests form-encoded responses likely; warn when client expects JSON.
 
 8) `TOKEN_HTTP200_ERROR_PAYLOAD_RISK`  
 Token endpoint returns HTTP 200 with `error` payload patterns; warn.
@@ -413,7 +404,7 @@ AuthProbe findings must be consistent and CI-friendly. Each finding includes:
   - `trace.jsonl` (sanitized HTTP transcript)
   - `report.json`
   - `report.md`
-  - `meta.json` (tool version, profile, timestamp, settings)
+  - `meta.json` (tool version, timestamp, settings)
 
 ### Exit codes
 - `0` = no findings at/above `--fail-on`
@@ -442,12 +433,6 @@ Redaction rules (baseline):
 - Includes >= 3 evidence lines (request + status + key header presence)
 - Produces valid markdown + JSON outputs consistent with stdout
 - `--bundle` creates zip with required files and redaction applied
-
-### `matrix`
-- Runs scan per profile and prints compact comparison
-- Includes: result, failing step, primary finding per profile
-- Supports `--format table|md|json`
-- Exit respects `--fail-on`
 
 ---
 
@@ -507,10 +492,8 @@ Must ship:
 1) Repo scaffold + CLI wiring + exact `--help` outputs  
 2) Scan funnel steps + finding engine + JSON schema  
 3) Markdown renderer + bundle exporter  
-4) Profiles + matrix orchestration  
-5) Remediation guidance for top codes (fastapi/nginx/envoy/generic)  
-6) Fixtures + golden tests  
-7) Release packaging (binaries + docker + action)
+4) Fixtures + golden tests  
+5) Release packaging (binaries + docker + action)
 
 ---
 
@@ -527,10 +510,6 @@ ARGUMENTS:
   <mcp_url>                MCP endpoint URL (example: https://example.com/mcp)
 
 FLAGS:
-  -p, --profile <name>     Client behavior profile to simulate.
-                           Options: generic, vscode, inspector
-                           Default: generic
-
   -H, --header <k:v>       Add a request header (repeatable).
                            Example: -H "Host: internal.example.com"
 
@@ -542,55 +521,17 @@ FLAGS:
                            Connection timeout in seconds. Default: 10
       --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
 
-  --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
+      --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
                            Options: off, best-effort, strict
                            Default: best-effort
-      --rfc3986 <mode>     RFC 3986 URI parsing + HTTPS checks for metadata URLs.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc8414 <mode>     RFC 8414 authorization server metadata checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc8707 <mode>     RFC 8707 resource indicator checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc9207 <mode>     RFC 9207 issuer identification checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc6750 <mode>     RFC 6750 bearer token method checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc7517 <mode>     RFC 7517 JWKS shape validation checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc7519 <mode>     RFC 7519 JWT claim validation checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc7636 <mode>     RFC 7636 PKCE posture checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc6749 <mode>     RFC 6749 OAuth endpoint behavior probes.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc1918 <mode>     RFC 1918 private-range SSRF protections.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc6890 <mode>     RFC 6890 special-purpose range SSRF protections.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc9110 <mode>     RFC 9110 redirect handling checks for metadata fetches.
+
+      --rfc <mode>         RFC conformance checks (9728, 8414, 3986, 8707, 7636, etc.).
                            Options: off, best-effort, strict
                            Default: best-effort
 
       --allow-private-issuers
                            Allow fetching authorization server metadata from private/loopback/link-local issuers.
                            (Use only in trusted networks.)
-
-
-      --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
-                           Options: off, best-effort, strict
-                           Default: best-effort
-
 
       --insecure           Allow invalid TLS certificates (dev only).
       --no-follow-redirects
@@ -613,75 +554,17 @@ DIAGNOSTICS:
 
 EXAMPLES:
   authprobe scan https://mcp.example.com/mcp
-  authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
+  authprobe scan https://mcp.example.com/mcp --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
-  authprobe scan https://mcp.example.com/mcp --rfc9728 strict
+  authprobe scan https://mcp.example.com/mcp --rfc strict
   authprobe scan https://mcp.example.com/mcp --mcp strict
-```
-
-### `authprobe matrix --help`
-```text
-authprobe matrix: Compare MCP OAuth compatibility across multiple client profiles and show where behavior diverges.
-
-USAGE:
-  authprobe matrix <mcp_url> [flags]
-
-ARGUMENTS:
-  <mcp_url>                MCP endpoint URL (example: https://example.com/mcp)
-
-FLAGS:
-      --profiles <list>    Comma-separated list of profiles to run.
-                           Options: generic, vscode, inspector
-                           Default: generic,vscode,inspector
-
-  -H, --header <k:v>       Add a request header (repeatable).
-      --proxy <url>        HTTP(S) proxy for outbound requests.
-      --timeout <sec>      Overall timeout per profile in seconds. Default: 60
-
-
-      --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
-                           Options: off, best-effort, strict
-                           Default: best-effort
-
-      --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-
-      --allow-private-issuers
-                           Allow fetching authorization server metadata from private/loopback/link-local issuers.
-                           (Use only in trusted networks.)
-
-      --insecure           Allow invalid TLS certificates (dev only).
-      --no-follow-redirects
-                           Do not follow HTTP redirects.
-
-      --fail-on <level>    Exit non-zero if any profile has findings at/above this severity.
-                           Options: none, low, medium, high
-                           Default: high
-
-OUTPUTS:
-      --format <fmt>       Output format for stdout.
-                           Options: table, md, json
-                           Default: table
-
-      --json <path>        Write structured JSON matrix to file.
-      --md <path>          Write Markdown matrix to file.
-      --bundle <path>      Write sanitized evidence bundle (zip) containing per-profile traces.
-
-DIAGNOSTICS:
-      --verbose            Verbose logs (includes request timeline; still redacted).
-
-EXAMPLES:
-  authprobe matrix https://mcp.example.com/mcp
-  authprobe matrix https://mcp.example.com/mcp --profiles vscode,inspector --format md
-  authprobe matrix https://mcp.example.com/mcp --json matrix.json --bundle matrix-evidence.zip
 ```
 
 ## 16) Appendix B — Golden example (report shape expectations)
 
 A golden Markdown report must include:
-- Target, profile, timestamp
+- Target, timestamp
 - funnel table (steps)
 - primary finding with severity/confidence
 - evidence block with sanitized request/response facts

@@ -4,8 +4,6 @@ import "strings"
 
 func normalizeScanArgs(args []string) []string {
 	valueFlags := map[string]struct{}{
-		"-p":                {},
-		"--profile":         {},
 		"-H":                {},
 		"--header":          {},
 		"--proxy":           {},

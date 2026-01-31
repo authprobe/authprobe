@@ -56,16 +56,6 @@ Primary finding (HIGH): DISCOVERY_ROOT_WELLKNOWN_404 (confidence 0.92)
 Next steps: review the finding details and apply the suggested changes manually
 ```
 
-### 2) Ensure your MCP server works with different clients (Claude, VS Code, generic, Inspector)
-Use `--profile` on `scan` to emulate client-specific discovery behavior.
-
-VS Code profile highlights:
-- Enforces strict PRM `resource` equality against the resolved MCP endpoint (post-redirect).
-- Prefers path-suffix PRM discovery (`/.well-known/oauth-protected-resource/<path>`).
-- Warns on legacy root auth-server well-known probe failures and whitespace in scopes.
-
----
-
 ## Core commands
 
 ### `authprobe scan <mcp_url>`
@@ -83,7 +73,6 @@ Common flags:
 
 Examples:
 ```bash
-authprobe scan https://mcp.example.com/mcp --profile vscode
 authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com"
 authprobe scan https://mcp.example.com/mcp --md report.md --json report.json --bundle evidence.zip
 authprobe scan https://mcp.example.com/mcp --json - | jq '.findings'
@@ -130,13 +119,12 @@ It can be. Client discovery behaviors differ, infra strips headers, `.well-known
 ## Contributing
 Contributions that help the ecosystem most:
 - new fixtures (sanitized real-world failure traces)
-- new client profiles
 - new deterministic guidance examples
 - hardening redaction and report stability
 
 ---
 
 ## Keywords (for humans and search)
-MCP OAuth, Model Context Protocol authentication, OAuth discovery, oauth-protected-resource, `.well-known`, `resource_metadata`, PRM, RFC 9728, RFC 8414, token endpoint parsing, VS Code MCP, MCP Inspector, MCP server authentication, OAuth proxy troubleshooting.
+MCP OAuth, Model Context Protocol authentication, OAuth discovery, oauth-protected-resource, `.well-known`, `resource_metadata`, PRM, RFC 9728, RFC 8414, token endpoint parsing, MCP server authentication, OAuth proxy troubleshooting.
 
 ---

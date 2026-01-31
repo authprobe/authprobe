@@ -21,7 +21,6 @@ import (
 
 type scanConfig struct {
 	Target              string
-	Profile             string
 	Headers             []string
 	Timeout             time.Duration
 	Verbose             bool
@@ -39,7 +38,6 @@ type scanConfig struct {
 
 type scanReport struct {
 	Target         string     `json:"target"`
-	Profile        string     `json:"profile"`
 	MCPMode        string     `json:"mcp_mode"`
 	RFCMode        string     `json:"rfc_mode"`
 	Timestamp      string     `json:"timestamp"`
@@ -122,7 +120,6 @@ const mcpProtocolVersion = "2025-11-25"
 func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
 	report := scanReport{
 		Target:    config.Target,
-		Profile:   config.Profile,
 		MCPMode:   config.MCPMode,
 		RFCMode:   config.RFCMode,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -313,25 +310,13 @@ func resolvedTarget(resp *http.Response, fallback string) string {
 	return fallback
 }
 
-// fetchPRMMatrix retrieves protected resource metadata across discovery candidates and applies
-// profile-specific expectations (e.g., VS Code prefers path-suffix PRM and strict resource equality).
+// fetchPRMMatrix retrieves protected resource metadata across discovery candidates.
 func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
 		return prmResult{}, nil, "", err
 	}
-	// VS Code profile highlights:
-	// - PRM resource equality uses the resolved MCP endpoint (post-redirect).
-	// - Path-suffix PRM is preferred when the MCP endpoint has a path.
-	// - Additional VS Code linting occurs elsewhere (legacy auth-server probe, scope whitespace).
-	preferPathSuffix := isVSCodeProfile(config.Profile)
 	expectedResource := config.Target
-	if preferPathSuffix && resolvedTarget != "" {
-		expectedResource = resolvedTarget
-	}
-	if preferPathSuffix && hasPathSuffix {
-		candidates = reorderPRMCandidates(candidates)
-	}
 
 	findings := []finding{}
 	if rfcModeEnabled(config.RFCMode) {
@@ -348,15 +333,11 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	var bestPRM prmResult
 	var fallbackPRM prmResult
 	fallbackSet := false
-	pathSuffixSeen := false
 	pathSuffixOK := false
 	for _, candidate := range candidates {
 		reportFindings := config.RFCMode != "off"
 		if hasPathSuffix {
 			reportFindings = candidate.Source == "path-suffix"
-		}
-		if candidate.Source == "path-suffix" {
-			pathSuffixSeen = true
 		}
 		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(candidate.URL, fmt.Sprintf("prm(%s)", candidate.Source), config, false); len(urlFindings) > 0 {
@@ -464,9 +445,6 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		} else if bestPRM.AuthorizationServers == nil && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
 			bestPRM = prm
 		}
-	}
-	if hasPathSuffix && preferPathSuffix && (pathSuffixSeen && !pathSuffixOK) {
-		findings = append(findings, newFinding("PRM_WELLKNOWN_PATH_SUFFIX_MISSING", "path-suffix PRM endpoint missing or mismatched"))
 	}
 	if hasPathSuffix && !pathSuffixOK && fallbackSet {
 		bestPRM = fallbackPRM
@@ -590,11 +568,6 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing code_challenge_methods_supported", issuer)))
 			}
 		}
-		if isVSCodeProfile(config.Profile) {
-			if badScopes := scopesWithWhitespace(obj["scopes_supported"]); len(badScopes) > 0 {
-				findings = append(findings, newFinding("SCOPES_WHITESPACE_RISK", fmt.Sprintf("scopes_supported contains whitespace: %s", strings.Join(badScopes, ", "))))
-			}
-		}
 		if rfcModeEnabled(config.RFCMode) && prm.Resource != "" {
 			if protectedResources, ok := obj["protected_resources"].([]any); ok && len(protectedResources) > 0 {
 				if !containsString(protectedResources, prm.Resource) {
@@ -621,17 +594,6 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 					findings = append(findings, newFinding("JWKS_INVALID", fmt.Sprintf("%s not JSON object", jwksURI)))
 				} else if keys, ok := jwksObj["keys"].([]any); !ok || len(keys) == 0 {
 					findings = append(findings, newFinding("JWKS_INVALID", fmt.Sprintf("%s missing keys array", jwksURI)))
-				}
-			}
-		}
-		if isVSCodeProfile(config.Profile) {
-			legacyURL := buildLegacyMetadataURL(issuer)
-			if legacyURL != "" && legacyURL != metadataURL {
-				legacyResp, _, err := fetchWithRedirects(client, config, legacyURL, trace, stdout, "Step 4: Auth server metadata")
-				if err != nil {
-					findings = append(findings, newFinding("AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED", fmt.Sprintf("legacy metadata probe %s error: %v", legacyURL, err)))
-				} else if legacyResp.StatusCode != http.StatusOK {
-					findings = append(findings, newFinding("AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED", fmt.Sprintf("legacy metadata probe %s status %d", legacyURL, legacyResp.StatusCode)))
 				}
 			}
 		}
@@ -1554,11 +1516,6 @@ func mcpModeStrict(mode string) bool {
 	return strings.EqualFold(mode, "strict")
 }
 
-// isVSCodeProfile reports whether the scan should apply VS Code-specific discovery expectations.
-func isVSCodeProfile(profile string) bool {
-	return strings.EqualFold(strings.TrimSpace(profile), "vscode")
-}
-
 func isHTTPSURL(parsed *url.URL) bool {
 	return parsed != nil && strings.EqualFold(parsed.Scheme, "https") && parsed.Host != ""
 }
@@ -1654,24 +1611,6 @@ func checkEndpointHostMismatch(findings *[]finding, endpoint string, issuerHost 
 	}
 }
 
-// scopesWithWhitespace returns scope strings that include leading/trailing whitespace.
-func scopesWithWhitespace(raw any) []string {
-	scopes, ok := raw.([]any)
-	if !ok {
-		return nil
-	}
-	var bad []string
-	for _, scope := range scopes {
-		value, ok := scope.(string)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(value) != value {
-			bad = append(bad, fmt.Sprintf("%q", value))
-		}
-	}
-	return bad
-}
 
 func applyHeaders(req *http.Request, headers []string) error {
 	for _, header := range headers {
@@ -1719,30 +1658,6 @@ func buildPRMCandidates(target string, resourceMetadata string) ([]prmCandidate,
 	return candidates, hasPathSuffix, nil
 }
 
-// reorderPRMCandidates prioritizes candidates for VS Code by checking resource_metadata, path-suffix, then root.
-func reorderPRMCandidates(candidates []prmCandidate) []prmCandidate {
-	resourceMeta := []prmCandidate{}
-	pathSuffix := []prmCandidate{}
-	root := []prmCandidate{}
-	other := []prmCandidate{}
-	for _, candidate := range candidates {
-		switch candidate.Source {
-		case "resource_metadata":
-			resourceMeta = append(resourceMeta, candidate)
-		case "path-suffix":
-			pathSuffix = append(pathSuffix, candidate)
-		case "root":
-			root = append(root, candidate)
-		default:
-			other = append(other, candidate)
-		}
-	}
-	ordered := append([]prmCandidate{}, resourceMeta...)
-	ordered = append(ordered, pathSuffix...)
-	ordered = append(ordered, root...)
-	ordered = append(ordered, other...)
-	return ordered
-}
 
 func buildPathSuffixCandidate(target *url.URL) (string, bool) {
 	path := target.EscapedPath()
@@ -1796,21 +1711,6 @@ func buildMetadataURL(issuer string) string {
 	return parsed.String()
 }
 
-// buildLegacyMetadataURL builds the root-level auth-server metadata URL used by some legacy probes.
-func buildLegacyMetadataURL(issuer string) string {
-	parsed, err := url.Parse(issuer)
-	if err != nil {
-		return ""
-	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return ""
-	}
-	return (&url.URL{
-		Scheme: parsed.Scheme,
-		Host:   parsed.Host,
-		Path:   "/.well-known/oauth-authorization-server",
-	}).String()
-}
 
 func issuerPrivate(issuer string) bool {
 	parsed, err := url.Parse(issuer)
@@ -2188,11 +2088,7 @@ func severityRank(severity string) int {
 
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
-	fmt.Fprintf(&out, "Scanning: %s", report.Target)
-	if report.Profile != "" && report.Profile != "generic" {
-		fmt.Fprintf(&out, " (profile: %s)", report.Profile)
-	}
-	fmt.Fprintln(&out)
+	fmt.Fprintf(&out, "Scanning: %s\n", report.Target)
 	fmt.Fprintln(&out, "Funnel")
 	maxLabel := 0
 	maxStatus := 0
@@ -2415,7 +2311,6 @@ func renderMarkdown(report scanReport) string {
 	fmt.Fprintf(&md, "# AuthProbe report\n\n")
 	fmt.Fprintf(&md, "Scanning: %s\n\n", report.Target)
 	fmt.Fprintf(&md, "- Target: %s\n", report.Target)
-	fmt.Fprintf(&md, "- Profile: %s\n", report.Profile)
 	fmt.Fprintf(&md, "- MCP: %s\n", report.MCPMode)
 	fmt.Fprintf(&md, "- RFC: %s\n", report.RFCMode)
 	fmt.Fprintf(&md, "- Timestamp: %s\n\n", report.Timestamp)
