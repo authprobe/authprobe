@@ -104,7 +104,7 @@ func runScanForServerProfile(t *testing.T, target string, profile string) scanRe
 		Profile:             profile,
 		Timeout:             5 * time.Second,
 		MCPMode:             "best-effort",
-		RFC9728Mode:         "best-effort",
+		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
 	}, &stdout, &verbose)
 	if err != nil {

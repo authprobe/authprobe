@@ -144,7 +144,6 @@ func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer)
 	if err != nil {
 		return report, scanSummary{}, err
 	}
-	step1Trace := append([]traceEntry(nil), trace...)
 	findings = append(findings, step1Findings...)
 	step1.Status = statusFromFindings(step1Findings, authRequired)
 	step1.Detail = step1Evidence
@@ -174,12 +173,6 @@ func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer)
 			explanation := buildScanExplanation(config, resourceMetadata, prmResult{}, authRequired)
 			if explanation != "" {
 				summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
-			}
-		}
-		if config.ShowTrace {
-			traceView := buildProbeTraceASCII(step1Trace, config.Target, resourceMetadata, step1Evidence, authRequired)
-			if traceView != "" {
-				summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceView + "\n"
 			}
 		}
 		summary.Trace = trace
@@ -233,12 +226,6 @@ func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer)
 		explanation := buildScanExplanation(config, resourceMetadata, prmResult, authRequired)
 		if explanation != "" {
 			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
-		}
-	}
-	if config.ShowTrace {
-		traceView := buildProbeTraceASCII(step1Trace, config.Target, resourceMetadata, step1Evidence, authRequired)
-		if traceView != "" {
-			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceView + "\n"
 		}
 	}
 	summary.Trace = trace
@@ -594,7 +581,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				}
 			}
 		}
-		if rfcModeEnabled(config.RFC7636Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if methods, ok := obj["code_challenge_methods_supported"].([]any); ok {
 				if !containsString(methods, "S256") {
 					findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing S256", issuer)))
@@ -2430,19 +2417,7 @@ func renderMarkdown(report scanReport) string {
 	fmt.Fprintf(&md, "- Target: %s\n", report.Target)
 	fmt.Fprintf(&md, "- Profile: %s\n", report.Profile)
 	fmt.Fprintf(&md, "- MCP: %s\n", report.MCPMode)
-	fmt.Fprintf(&md, "- RFC9728: %s\n", report.RFC9728Mode)
-	fmt.Fprintf(&md, "- RFC3986: %s\n", report.RFC3986Mode)
-	fmt.Fprintf(&md, "- RFC8414: %s\n", report.RFC8414Mode)
-	fmt.Fprintf(&md, "- RFC8707: %s\n", report.RFC8707Mode)
-	fmt.Fprintf(&md, "- RFC9207: %s\n", report.RFC9207Mode)
-	fmt.Fprintf(&md, "- RFC6750: %s\n", report.RFC6750Mode)
-	fmt.Fprintf(&md, "- RFC7517: %s\n", report.RFC7517Mode)
-	fmt.Fprintf(&md, "- RFC7519: %s\n", report.RFC7519Mode)
-	fmt.Fprintf(&md, "- RFC7636: %s\n", report.RFC7636Mode)
-	fmt.Fprintf(&md, "- RFC6749: %s\n", report.RFC6749Mode)
-	fmt.Fprintf(&md, "- RFC1918: %s\n", report.RFC1918Mode)
-	fmt.Fprintf(&md, "- RFC6890: %s\n", report.RFC6890Mode)
-	fmt.Fprintf(&md, "- RFC9110: %s\n", report.RFC9110Mode)
+	fmt.Fprintf(&md, "- RFC: %s\n", report.RFCMode)
 	fmt.Fprintf(&md, "- Timestamp: %s\n\n", report.Timestamp)
 	fmt.Fprintf(&md, "## Funnel\n\n")
 	for _, step := range report.Steps {

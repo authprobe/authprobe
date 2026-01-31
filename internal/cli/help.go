@@ -63,7 +63,7 @@ EXAMPLES:
   authprobe scan https://mcp.example.com/mcp --profile vscode --md report.md --json report.json
   authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
   authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
-  authprobe scan https://mcp.example.com/mcp --rfc9728 strict
+  authprobe scan https://mcp.example.com/mcp --rfc strict
 `
 
 const rootHelp = `authprobe: MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks).
