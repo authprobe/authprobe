@@ -5,26 +5,13 @@
 [![Security Status](https://snyk.io/test/github/authprobe/authprobe/badge.svg)](https://snyk.io/test/github/authprobe/authprobe)
 
 
-`authprobe` is a tool that tells you *exactly why* **MCP OAuth** is broken.
+`authprobe` pinpoints **MCP OAuth** failures.
 
-Remote MCP servers + OAuth fail for boring reasons. Left unresolved, these may result in hours of debugging and broken implementations. `authprobe` helps identify and pinpoint the exact deviation from the spec.
+MCP + OAuth breaks for mundane reasons—missing headers, wrong content types, malformed metadata. `authprobe scan <mcp_url>` walks the discovery flow and reports exactly where it diverges from spec.
 
-`authprobe` focuses on the most failure-prone parts of MCP OAuth. Getting MCP OAuth working well means following a bunch of specs and handling all edge cases. Miss one spec detail and you can lose days chasing “nothing’s happening” bugs. You need a reliable way to pinpoint what’s actually wrong. Is it your MCP server or your OAuth setup ? `authprobe scan <https://mcp>` lets to find the gaps
+See [docs/funnel.md](docs/funnel.md) for the full breakdown of what gets checked and why.
 
-For a detailed funnel breakdown (steps, expectations, RFCs, and failure codes), see [docs/funnel.md](docs/funnel.md).
-
-Example scan output and funnel step map: [docs/scan-google-compute-mcp.md](docs/scan-google-compute-mcp.md).
-Example scan **verbose** output and funnel step map: [docs/scan-google-compute-mcp.md](docs/scan-google-compute-mcp-verbose.md).
-
-Relevant RFCs that make MCP OAuth complex:
-- Model Context Protocol (MCP) Specification
-- RFC 9728 — OAuth 2.0 Protected Resource Metadata
-- RFC 8414 — OAuth 2.0 Authorization Server Metadata
-- RFC 8707 — Resource Indicators for OAuth 2.0
-- RFC 7636 — Proof Key for Code Exchange by OAuth Public Clients
-- RFC 7517 — JSON Web Key (JWK)
-- RFC 3986 — Uniform Resource Identifier (URI): Generic Syntax
-- RFC 9110 — HTTP Semantics
+Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636), [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), [RFC 9110](https://datatracker.ietf.org/doc/html/rfc9110).
 
 ---
 
