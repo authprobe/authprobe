@@ -52,9 +52,10 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.Var(&headers, "H", "")
 	fs.String("proxy", "", "")
 	timeout := fs.Int("timeout", 8, "")
-	fs.Int("retries", 1, "")
 	fs.String("mcp", "best-effort", "")
 	fs.String("rfc", "best-effort", "")
+	// SSRF protection: by default, block fetching metadata from private/loopback/link-local
+	// addresses (RFC 1918, RFC 6890). Set to true for internal/enterprise deployments.
 	fs.Bool("allow-private-issuers", false, "")
 	fs.Bool("insecure", false, "")
 	fs.Bool("no-follow-redirects", false, "")

@@ -8,7 +8,6 @@ func normalizeScanArgs(args []string) []string {
 		"--header":          {},
 		"--proxy":           {},
 		"--timeout":         {},
-		"--retries":         {},
 		"--mcp":             {},
 		"--rfc":             {},
 		"--fail-on":         {},

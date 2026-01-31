@@ -63,8 +63,10 @@ Diagnose MCP OAuth by running a staged probe.
 
 Common flags:
 - `--help`
-- `--timeout <sec>`, `--retries <n>`
+- `--timeout <sec>`
 - `--mcp <mode>` (off, best-effort, strict MCP 2025-11-25 conformance checks)
+- `--rfc <mode>` (off, best-effort, strict RFC conformance checks)
+- `--allow-private-issuers` (bypass [SSRF protection](docs/ssrf-protection.md) for internal networks)
 - `--verbose` (print request/response headers + bodies during scan)
 - `--explain` (print RFC rationale for each scan step)
 - `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)

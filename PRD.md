@@ -517,7 +517,6 @@ FLAGS:
                            Example: --proxy http://127.0.0.1:8080
 
       --timeout <sec>      Overall scan timeout in seconds. Default: 8
-      --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
 
       --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
                            Options: off, best-effort, strict
