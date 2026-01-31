@@ -399,7 +399,6 @@ AuthProbe findings must be consistent and CI-friendly. Each finding includes:
 ### Files
 - `--md report.md` (human, PR/issue friendly)
 - `--json report.json` (machine, stable schema)
-- `--sarif report.sarif` (optional for GitHub code scanning)
 - `--bundle evidence.zip` containing:
   - `trace.jsonl` (sanitized HTTP transcript)
   - `report.json`
@@ -415,13 +414,8 @@ AuthProbe findings must be consistent and CI-friendly. Each finding includes:
 
 ## 9) Security & privacy (v0.1 constraints)
 
-- Redaction ON by default.
 - Never store or emit full tokens/cookies/secrets in logs or bundles.
-- `--no-redact` exists only for local debugging and is flagged as unsafe.
-
-Redaction rules (baseline):
-- `Authorization`, `Cookie`, `Set-Cookie` → removed or token-fingerprinted
-- bodies → only shape-level info (content-type, key presence), no raw credentials
+- Sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`) should be redacted or token-fingerprinted in outputs.
 
 ---
 
@@ -513,9 +507,6 @@ FLAGS:
   -H, --header <k:v>       Add a request header (repeatable).
                            Example: -H "Host: internal.example.com"
 
-      --proxy <url>        HTTP(S) proxy for outbound requests.
-                           Example: --proxy http://127.0.0.1:8080
-
       --timeout <sec>      Overall scan timeout in seconds. Default: 8
 
       --mcp <mode>         MCP 2025-11-25 conformance checks (JSON-RPC + Streamable HTTP).
@@ -541,13 +532,11 @@ FLAGS:
 OUTPUTS:
       --json <path>        Write structured JSON report to file.
       --md <path>          Write Markdown report to file.
-      --sarif <path>       Write SARIF report (GitHub code scanning) to file.
       --bundle <path>      Write sanitized evidence bundle (zip) to file.
       --output-dir <dir>   Write all requested outputs into a directory.
 
 DIAGNOSTICS:
-      --verbose            Verbose logs (includes request timeline; still redacted).
-      --no-redact          Disable redaction (NOT recommended; for local debugging only).
+      --verbose            Verbose logs (includes request/response headers + bodies).
 
 EXAMPLES:
   authprobe scan https://mcp.example.com/mcp

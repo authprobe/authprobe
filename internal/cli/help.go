@@ -12,9 +12,6 @@ FLAGS:
   -H, --header <k:v>       Add a request header (repeatable).
                            Example: -H "Host: internal.example.com"
 
-      --proxy <url>        HTTP(S) proxy for outbound requests.
-                           Example: --proxy http://127.0.0.1:8080
-
       --timeout <sec>      Overall scan timeout in seconds. Default: 8
 
       --mcp <mode>         MCP 2025-11-25 conformance checks (Streamable HTTP + JSON-RPC).
@@ -39,15 +36,12 @@ FLAGS:
 OUTPUTS:
       --json <path>        Write structured JSON report to file. Use "-" for stdout.
       --md <path>          Write Markdown report to file.
-      --sarif <path>       Write SARIF report (GitHub code scanning) to file.
       --bundle <path>      Write sanitized evidence bundle (zip) to file.
       --output-dir <dir>   Write all requested outputs into a directory.
 
 DIAGNOSTICS:
-      --verbose            Verbose logs (includes request/response headers + bodies; still redacted).
-      --no-redact          Disable redaction (NOT recommended; for local debugging only).
-      --explain            Print an RFC 9728 rationale for each scan step.
-      --show-trace         Print the MCP probe call trace in ASCII.
+      --verbose            Verbose logs (includes request/response headers + bodies).
+      --explain            Print an RFC rationale for each scan step.
       --tool-list          Print MCP tool names with their titles (from tools/list).
       --tool-detail <name> Print a single MCP tool's full JSON definition.
 

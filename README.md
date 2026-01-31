@@ -73,7 +73,7 @@ Common flags:
 - `--verbose` (print request/response headers + bodies during scan)
 - `--explain` (print RFC rationale for each scan step)
 - `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)
-- Outputs: `--md`, `--json`, `--sarif`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
+- Outputs: `--md`, `--json`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
 
 
 Examples:
