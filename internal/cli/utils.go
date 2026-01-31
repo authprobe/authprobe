@@ -255,7 +255,20 @@ func resolveURL(base *url.URL, ref string) (*url.URL, error) {
 	return base.ResolveReference(parsed), nil
 }
 
-// buildPRMCandidates builds the list of PRM discovery candidates.
+// buildPRMCandidates builds the list of Protected Resource Metadata (PRM) discovery candidates
+// per RFC 9728. It returns up to three candidates in priority order:
+//
+//  1. resource_metadata: URL from WWW-Authenticate header (if provided)
+//  2. root: /.well-known/oauth-protected-resource at the target host
+//  3. path-suffix: /.well-known/oauth-protected-resource + target path (if target has a path)
+//
+// Example for target "https://api.example.com/mcp":
+//
+//	root:        https://api.example.com/.well-known/oauth-protected-resource
+//	path-suffix: https://api.example.com/.well-known/oauth-protected-resource/mcp
+//
+// The second return value (hasPathSuffix) is true when the target has a non-trivial path,
+// indicating that RFC 9728 requires the path-suffix endpoint to exist.
 func buildPRMCandidates(target string, resourceMetadata string) ([]prmCandidate, bool, error) {
 	parsedTarget, err := url.Parse(target)
 	if err != nil {
