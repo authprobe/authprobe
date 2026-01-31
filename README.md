@@ -9,6 +9,7 @@
 
 MCP + OAuth breaks for mundane reasons—missing headers, wrong content types, malformed metadata. `authprobe scan <mcp_url>` walks the discovery flow and reports exactly where it diverges from spec.
 
+```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                            AuthProbe Scan Funnel                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
@@ -16,9 +17,10 @@ MCP + OAuth breaks for mundane reasons—missing headers, wrong content types, m
 │  [1] Discovery ──► [2] MCP Init ──► [3] PRM ──► [4] Auth Server ──► [5] Token
 │        │                │              │              │                │    │
 │        ▼                ▼              ▼              ▼                ▼    │
-│     401 + WWW-     initialize +    Fetch PRM     Fetch issuer      POST     │
-│     Authenticate   tools/list      metadata      metadata         probe     │                    │
+│     401 + WWW-     initialize +    Fetch PRM     Fetch issuer       POST    │
+│     Authenticate   tools/list      metadata      metadata          probe    │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
 
 See [docs/funnel.md](docs/funnel.md) for the full breakdown of what gets checked and why.
 
