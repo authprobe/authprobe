@@ -56,6 +56,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Int("timeout", 8, "")
 	fs.Int("connect-timeout", 10, "")
 	fs.Int("retries", 1, "")
+	fs.String("mcp", "best-effort", "")
 	fs.String("rfc9728", "best-effort", "")
 	fs.String("rfc3986", "best-effort", "")
 	fs.String("rfc8414", "best-effort", "")
@@ -105,6 +106,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Explain:             *explain,
 		ShowTrace:           *showTrace,
 		FailOn:              fs.Lookup("fail-on").Value.String(),
+		MCPMode:             fs.Lookup("mcp").Value.String(),
 		RFC9728Mode:         fs.Lookup("rfc9728").Value.String(),
 		RFC3986Mode:         fs.Lookup("rfc3986").Value.String(),
 		RFC8414Mode:         fs.Lookup("rfc8414").Value.String(),

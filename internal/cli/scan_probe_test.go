@@ -58,6 +58,7 @@ func TestProbeMCPAuthNotRequiredSkipsAuthChecks(t *testing.T) {
 		if auth := r.Header.Get("Authorization"); auth != "" {
 			t.Errorf("expected no Authorization header, got %q", auth)
 		}
+		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(server.Close)

@@ -81,6 +81,7 @@ func newInitializeNonJSONServer(t *testing.T) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
 			return

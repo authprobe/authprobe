@@ -28,6 +28,7 @@ type scanConfig struct {
 	Explain             bool
 	ShowTrace           bool
 	FailOn              string
+	MCPMode             string
 	RFC9728Mode         string
 	RFC3986Mode         string
 	RFC8414Mode         string
@@ -52,6 +53,7 @@ type scanConfig struct {
 type scanReport struct {
 	Target         string     `json:"target"`
 	Profile        string     `json:"profile"`
+	MCPMode        string     `json:"mcp_mode"`
 	RFC9728Mode    string     `json:"rfc9728_mode"`
 	RFC3986Mode    string     `json:"rfc3986_mode"`
 	RFC8414Mode    string     `json:"rfc8414_mode"`
@@ -102,7 +104,7 @@ type traceEntry struct {
 
 type jsonRPCRequest struct {
 	JSONRPC string `json:"jsonrpc"`
-	ID      int    `json:"id"`
+	ID      any    `json:"id,omitempty"`
 	Method  string `json:"method"`
 	Params  any    `json:"params,omitempty"`
 }
@@ -140,10 +142,13 @@ type mcpToolDetail struct {
 	Annotations  map[string]any  `json:"annotations,omitempty"`
 }
 
+const mcpProtocolVersion = "2025-11-25"
+
 func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
 	report := scanReport{
 		Target:      config.Target,
 		Profile:     config.Profile,
+		MCPMode:     config.MCPMode,
 		RFC9728Mode: config.RFC9728Mode,
 		RFC3986Mode: config.RFC3986Mode,
 		RFC8414Mode: config.RFC8414Mode,
@@ -183,10 +188,15 @@ func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer)
 	steps = append(steps, step1)
 
 	step2 := scanStep{ID: 2, Name: "MCP initialize + tools/list"}
-	step2Status, step2Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, verboseOutput, authRequired)
-	step2.Status = step2Status
-	step2.Detail = step2Detail
-	findings = append(findings, step2Findings...)
+	if !mcpModeEnabled(config.MCPMode) {
+		step2.Status = "SKIP"
+		step2.Detail = "mcp checks disabled"
+	} else {
+		step2Status, step2Detail, step2Findings := mcpInitializeAndListTools(client, config, &trace, verboseOutput, authRequired)
+		step2.Status = step2Status
+		step2.Detail = step2Detail
+		findings = append(findings, step2Findings...)
+	}
 	steps = append(steps, step2)
 
 	if !authRequired {
@@ -281,6 +291,7 @@ type prmResult struct {
 }
 
 func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, string, []finding, string, bool, error) {
+	findings := []finding{}
 	// Create a GET request to the target MCP endpoint
 	req, err := http.NewRequest(http.MethodGet, config.Target, nil)
 	if err != nil {
@@ -319,20 +330,30 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	// Add this request/response pair to the trace for later analysis
 	addTrace(trace, req, resp)
 
+	if mcpModeEnabled(config.MCPMode) {
+		if resp.StatusCode == http.StatusOK {
+			contentType := resp.Header.Get("Content-Type")
+			if !isSSEContentType(contentType) {
+				findings = append(findings, newMCPFinding(config, "MCP_GET_NOT_SSE", fmt.Sprintf("GET content-type %q", contentType)))
+			}
+		}
+	}
+
 	if resp.StatusCode != http.StatusUnauthorized {
 		if resp.StatusCode == http.StatusMethodNotAllowed {
-			return "", resolvedTarget(resp, config.Target), nil, fmt.Sprintf("probe returned %d; continuing discovery", resp.StatusCode), true, nil
+			return "", resolvedTarget(resp, config.Target), findings, fmt.Sprintf("probe returned %d; continuing discovery", resp.StatusCode), true, nil
 		}
-		return "", resolvedTarget(resp, config.Target), nil, "auth not required", false, nil
+		return "", resolvedTarget(resp, config.Target), findings, "auth not required", false, nil
 	}
 
 	resourceMetadata, ok := extractResourceMetadata(resp.Header.Values("WWW-Authenticate"))
 	if !ok {
 		// Missing resource_metadata is a finding - the server requires auth but doesn't provide discovery info
-		return "", resolvedTarget(resp, config.Target), []finding{newFinding("DISCOVERY_NO_WWW_AUTHENTICATE", "missing resource_metadata in WWW-Authenticate")}, "missing WWW-Authenticate/resource_metadata", true, nil
+		findings = append(findings, newFinding("DISCOVERY_NO_WWW_AUTHENTICATE", "missing resource_metadata in WWW-Authenticate"))
+		return "", resolvedTarget(resp, config.Target), findings, "missing WWW-Authenticate/resource_metadata", true, nil
 	}
 	// Success: we have a 401 with resource_metadata, indicating proper MCP OAuth discovery
-	return resourceMetadata, resolvedTarget(resp, config.Target), nil, "401 with resource_metadata", true, nil
+	return resourceMetadata, resolvedTarget(resp, config.Target), findings, "401 with resource_metadata", true, nil
 }
 
 func resolvedTarget(resp *http.Response, fallback string) string {
@@ -757,8 +778,12 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	var evidence strings.Builder
 	findings := []finding{}
 
+	if !authRequired {
+		findings = append(findings, checkInitializeOrdering(client, config, trace, stdout)...)
+	}
+
 	initParams := map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": mcpProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "authprobe",
@@ -773,7 +798,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		Params:  initParams,
 	}
 
-	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout, "Step 2: MCP initialize + tools/list (initialize)")
+	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, "", trace, stdout, "Step 2: MCP initialize + tools/list (initialize)")
 	if err != nil {
 		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", fmt.Sprintf("initialize error: %v", err)))
 		return "FAIL", fmt.Sprintf("initialize error: %v", err), findings
@@ -798,12 +823,34 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
 
+	findings = append(findings, validateJSONRPCResponse(config, initPayload, initRequest.ID, "initialize")...)
+	initResult, capabilities, sessionID, initResultFindings := parseInitializeResult(config, initPayload, initResp)
+	findings = append(findings, initResultFindings...)
+
+	notificationFindings, notificationEvidence := sendInitializedNotification(client, config, sessionID, trace, stdout)
+	if notificationEvidence != "" {
+		fmt.Fprintf(&evidence, "\n%s", notificationEvidence)
+	}
+	findings = append(findings, notificationFindings...)
+
+	findings = append(findings, checkJSONRPCNullID(client, config, sessionID, trace, stdout)...)
+	findings = append(findings, checkJSONRPCNotificationWithID(client, config, sessionID, trace, stdout)...)
+	findings = append(findings, checkOriginValidation(client, config, sessionID, trace, stdout)...)
+	findings = append(findings, checkProtocolVersionHeader(client, config, sessionID, trace, stdout)...)
+	if sessionID != "" {
+		findings = append(findings, checkSessionHeader(client, config, sessionID, trace, stdout)...)
+	}
+
+	if supportsPing(capabilities) {
+		findings = append(findings, checkPing(client, config, sessionID, trace, stdout)...)
+	}
+
 	toolsRequest := jsonRPCRequest{
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/list",
 	}
-	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout, "Step 2: MCP initialize + tools/list (tools/list)")
+	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (tools/list)")
 	if err != nil {
 		fmt.Fprintf(&evidence, "\n")
 		fmt.Fprintf(&evidence, "tools/list -> error: %v", err)
@@ -830,6 +877,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
 		return "FAIL", strings.TrimSpace(evidence.String()), findings
 	}
+	findings = append(findings, validateJSONRPCResponse(config, toolsPayload, toolsRequest.ID, "tools/list")...)
 
 	toolNames := extractToolNames(toolsPayload.Result)
 	if len(toolNames) == 0 {
@@ -838,12 +886,22 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		fmt.Fprintf(&evidence, " (tools: %s)", strings.Join(toolNames, ", "))
 	}
 
-	return "PASS", strings.TrimSpace(evidence.String()), findings
+	findings = append(findings, checkToolSchemas(config, toolsPayload.Result)...)
+	findings = append(findings, checkToolIcons(config, toolsPayload.Result)...)
+	if supportsTasks(capabilities) || tasksAdvertised(initResult) {
+		findings = append(findings, checkTasksSupport(client, config, sessionID, trace, stdout)...)
+	}
+
+	status := "PASS"
+	if hasHighSeverity(findings) {
+		status = "FAIL"
+	}
+	return status, strings.TrimSpace(evidence.String()), findings
 }
 
 func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) ([]mcpToolDetail, error) {
 	initParams := map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": mcpProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "authprobe",
@@ -858,7 +916,7 @@ func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, 
 		Params:  initParams,
 	}
 
-	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, trace, stdout, "MCP tool fetch (initialize)")
+	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, "", trace, stdout, "MCP tool fetch (initialize)")
 	if err != nil {
 		return nil, err
 	}
@@ -869,12 +927,27 @@ func fetchMCPTools(client *http.Client, config scanConfig, trace *[]traceEntry, 
 		return nil, fmt.Errorf("initialize failed: %s", formatJSONRPCError(initResp, initPayload))
 	}
 
+	sessionID := ""
+	if initResp != nil {
+		sessionID = strings.TrimSpace(initResp.Header.Get("MCP-Session-Id"))
+	}
+	if sessionID == "" && initPayload != nil && initPayload.Result != nil {
+		var initResult map[string]any
+		if err := json.Unmarshal(initPayload.Result, &initResult); err == nil {
+			if value, ok := initResult["sessionId"].(string); ok {
+				sessionID = strings.TrimSpace(value)
+			} else if value, ok := initResult["session_id"].(string); ok {
+				sessionID = strings.TrimSpace(value)
+			}
+		}
+	}
+
 	toolsRequest := jsonRPCRequest{
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/list",
 	}
-	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, trace, stdout, "MCP tool fetch (tools/list)")
+	toolsResp, _, toolsPayload, err := postJSONRPC(client, config, config.Target, toolsRequest, sessionID, trace, stdout, "MCP tool fetch (tools/list)")
 	if err != nil {
 		return nil, err
 	}
@@ -902,19 +975,32 @@ func formatJSONRPCError(resp *http.Response, payload *jsonRPCResponse) string {
 	return fmt.Sprintf("%d", resp.StatusCode)
 }
 
-func postJSONRPC(client *http.Client, config scanConfig, target string, payload jsonRPCRequest, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, *jsonRPCResponse, error) {
+func postJSONRPC(client *http.Client, config scanConfig, target string, payload jsonRPCRequest, sessionID string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, *jsonRPCResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	return postJSONRPCBytes(client, config, target, body, sessionID, trace, stdout, verboseLabel, nil)
+}
+
+func postJSONRPCBytes(client *http.Client, config scanConfig, target string, body []byte, sessionID string, trace *[]traceEntry, stdout io.Writer, verboseLabel string, mutate func(*http.Request)) (*http.Response, []byte, *jsonRPCResponse, error) {
 	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	if mcpModeEnabled(config.MCPMode) {
+		req.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
+		if sessionID != "" {
+			req.Header.Set("MCP-Session-Id", sessionID)
+		}
+	}
 	if err := applyHeaders(req, config.Headers); err != nil {
 		return nil, nil, nil, err
+	}
+	if mutate != nil {
+		mutate(req)
 	}
 	if config.Verbose {
 		writeVerboseHeading(stdout, verboseLabel)
@@ -963,6 +1049,422 @@ func extractToolNames(raw json.RawMessage) []string {
 		}
 	}
 	return names
+}
+
+func validateJSONRPCResponse(config scanConfig, payload *jsonRPCResponse, expectedID any, context string) []finding {
+	findings := []finding{}
+	if payload == nil {
+		findings = append(findings, newMCPFinding(config, "MCP_JSONRPC_RESPONSE_INVALID", fmt.Sprintf("%s response not JSON", context)))
+		return findings
+	}
+	if payload.JSONRPC != "2.0" {
+		findings = append(findings, newMCPFinding(config, "MCP_JSONRPC_RESPONSE_INVALID", fmt.Sprintf("%s jsonrpc=%q", context, payload.JSONRPC)))
+	}
+	if expectedID != nil && !jsonRPCIDEqual(payload.ID, expectedID) {
+		findings = append(findings, newMCPFinding(config, "MCP_JSONRPC_RESPONSE_ID_MISMATCH", fmt.Sprintf("%s id=%v", context, payload.ID)))
+	}
+	resultPresent := payload.Result != nil
+	errorPresent := payload.Error != nil
+	if resultPresent == errorPresent {
+		findings = append(findings, newMCPFinding(config, "MCP_JSONRPC_RESPONSE_INVALID", fmt.Sprintf("%s result/error shape invalid", context)))
+	}
+	if payload.Error != nil {
+		if payload.Error.Message == "" {
+			findings = append(findings, newMCPFinding(config, "MCP_JSONRPC_RESPONSE_INVALID", fmt.Sprintf("%s error missing message", context)))
+		}
+	}
+	return findings
+}
+
+func jsonRPCIDEqual(a, b any) bool {
+	switch av := a.(type) {
+	case float64:
+		switch bv := b.(type) {
+		case int:
+			return av == float64(bv)
+		case int64:
+			return av == float64(bv)
+		case float64:
+			return av == bv
+		case string:
+			return fmt.Sprintf("%g", av) == bv
+		}
+	case int:
+		switch bv := b.(type) {
+		case int:
+			return av == bv
+		case int64:
+			return int64(av) == bv
+		case float64:
+			return float64(av) == bv
+		}
+	case string:
+		if bv, ok := b.(string); ok {
+			return av == bv
+		}
+	}
+	return a == b
+}
+
+func parseInitializeResult(config scanConfig, payload *jsonRPCResponse, resp *http.Response) (map[string]any, map[string]any, string, []finding) {
+	findings := []finding{}
+	if payload == nil || payload.Result == nil {
+		findings = append(findings, newMCPFinding(config, "MCP_INITIALIZE_RESULT_INVALID", "initialize missing result object"))
+		return nil, nil, "", findings
+	}
+	var result map[string]any
+	if err := json.Unmarshal(payload.Result, &result); err != nil {
+		findings = append(findings, newMCPFinding(config, "MCP_INITIALIZE_RESULT_INVALID", fmt.Sprintf("initialize result parse error: %v", err)))
+		return nil, nil, "", findings
+	}
+
+	protocolVersion, ok := result["protocolVersion"].(string)
+	if !ok || strings.TrimSpace(protocolVersion) == "" {
+		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISSING", "initialize result missing protocolVersion"))
+	} else if protocolVersion != mcpProtocolVersion {
+		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISMATCH", fmt.Sprintf("protocolVersion %q != %q", protocolVersion, mcpProtocolVersion)))
+	}
+
+	capabilities, ok := result["capabilities"].(map[string]any)
+	if !ok && result["capabilities"] != nil {
+		findings = append(findings, newMCPFinding(config, "MCP_CAPABILITIES_INVALID", "initialize capabilities not an object"))
+	}
+
+	sessionID := ""
+	if resp != nil {
+		sessionID = strings.TrimSpace(resp.Header.Get("MCP-Session-Id"))
+	}
+	if sessionID == "" {
+		if value, ok := result["sessionId"].(string); ok {
+			sessionID = strings.TrimSpace(value)
+		} else if value, ok := result["session_id"].(string); ok {
+			sessionID = strings.TrimSpace(value)
+		}
+	}
+
+	return result, capabilities, sessionID, findings
+}
+
+func sendInitializedNotification(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
+	notification := jsonRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "notifications/initialized",
+	}
+	resp, body, payload, err := postJSONRPC(client, config, config.Target, notification, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (notifications/initialized)")
+	if err != nil {
+		return []finding{newMCPFinding(config, "MCP_NOTIFICATION_FAILED", fmt.Sprintf("notifications/initialized error: %v", err))}, ""
+	}
+	evidence := fmt.Sprintf("notifications/initialized -> %d", resp.StatusCode)
+	findings := []finding{}
+	if resp.StatusCode != http.StatusAccepted {
+		findings = append(findings, newMCPFinding(config, "MCP_NOTIFICATION_STATUS_INVALID", fmt.Sprintf("notifications/initialized status %d", resp.StatusCode)))
+	}
+	if len(body) > 0 || payload != nil {
+		findings = append(findings, newMCPFinding(config, "MCP_NOTIFICATION_BODY_PRESENT", "notifications/initialized returned a body"))
+	}
+	return findings, evidence
+}
+
+func checkInitializeOrdering(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) []finding {
+	preInitRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      0,
+		Method:  "tools/list",
+	}
+	resp, _, payload, err := postJSONRPC(client, config, config.Target, preInitRequest, "", trace, stdout, "Step 2: MCP initialize + tools/list (pre-init tools/list)")
+	if err != nil {
+		return nil
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil
+	}
+	if payload != nil && payload.Error != nil {
+		return nil
+	}
+	return []finding{newMCPFinding(config, "MCP_INITIALIZE_ORDERING_NOT_ENFORCED", fmt.Sprintf("pre-init tools/list status %d", resp.StatusCode))}
+}
+
+func checkJSONRPCNullID(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      nil,
+		"method":  "tools/list",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return []finding{newMCPFinding(config, "MCP_JSONRPC_ID_NULL_ACCEPTED", "null id probe marshal failed")}
+	}
+	resp, _, parsed, err := postJSONRPCBytes(client, config, config.Target, body, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (null id probe)", nil)
+	if err != nil {
+		return nil
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil
+	}
+	if parsed != nil && parsed.Error != nil {
+		return nil
+	}
+	return []finding{newMCPFinding(config, "MCP_JSONRPC_ID_NULL_ACCEPTED", fmt.Sprintf("null id probe status %d", resp.StatusCode))}
+}
+
+func checkJSONRPCNotificationWithID(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      99,
+		"method":  "notifications/initialized",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return []finding{newMCPFinding(config, "MCP_NOTIFICATION_WITH_ID_ACCEPTED", "notification id probe marshal failed")}
+	}
+	resp, _, parsed, err := postJSONRPCBytes(client, config, config.Target, body, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (notification id probe)", nil)
+	if err != nil {
+		return nil
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil
+	}
+	if parsed != nil && parsed.Error != nil {
+		return nil
+	}
+	return []finding{newMCPFinding(config, "MCP_NOTIFICATION_WITH_ID_ACCEPTED", fmt.Sprintf("notification id probe status %d", resp.StatusCode))}
+}
+
+func checkOriginValidation(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      90,
+		"method":  "tools/list",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	resp, _, _, err := postJSONRPCBytes(client, config, config.Target, body, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (origin probe)", func(req *http.Request) {
+		req.Header.Set("Origin", "http://invalid.example")
+	})
+	if err != nil {
+		return nil
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return nil
+	}
+	return []finding{newMCPFinding(config, "MCP_ORIGIN_NOT_VALIDATED", fmt.Sprintf("origin probe status %d", resp.StatusCode))}
+}
+
+func checkProtocolVersionHeader(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      91,
+		"method":  "tools/list",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	resp, _, _, err := postJSONRPCBytes(client, config, config.Target, body, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (protocol version probe)", func(req *http.Request) {
+		req.Header.Set("MCP-Protocol-Version", "invalid")
+	})
+	if err != nil {
+		return nil
+	}
+	if resp.StatusCode == http.StatusBadRequest {
+		return nil
+	}
+	return []finding{newMCPFinding(config, "MCP_PROTOCOL_VERSION_REJECTION_MISSING", fmt.Sprintf("protocol version probe status %d", resp.StatusCode))}
+}
+
+func checkSessionHeader(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      92,
+		"method":  "tools/list",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	resp, _, _, err := postJSONRPCBytes(client, config, config.Target, body, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (session id probe)", func(req *http.Request) {
+		req.Header.Set("MCP-Session-Id", "invalid-session")
+	})
+	if err != nil {
+		return nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return []finding{newMCPFinding(config, "MCP_SESSION_ID_REJECTION_MISSING", fmt.Sprintf("session id probe status %d", resp.StatusCode))}
+}
+
+func supportsPing(capabilities map[string]any) bool {
+	if capabilities == nil {
+		return false
+	}
+	if value, ok := capabilities["ping"].(bool); ok {
+		return value
+	}
+	if utilities, ok := capabilities["utilities"].(map[string]any); ok {
+		if value, ok := utilities["ping"].(bool); ok {
+			return value
+		}
+	}
+	return false
+}
+
+func checkPing(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	pingRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      3,
+		Method:  "ping",
+	}
+	resp, _, payload, err := postJSONRPC(client, config, config.Target, pingRequest, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (ping)")
+	if err != nil {
+		return []finding{newMCPFinding(config, "MCP_PING_INVALID_RESPONSE", fmt.Sprintf("ping error: %v", err))}
+	}
+	if resp.StatusCode != http.StatusOK || payload == nil || payload.Error != nil {
+		return []finding{newMCPFinding(config, "MCP_PING_INVALID_RESPONSE", fmt.Sprintf("ping status %d", resp.StatusCode))}
+	}
+	var result any
+	if err := json.Unmarshal(payload.Result, &result); err != nil {
+		return []finding{newMCPFinding(config, "MCP_PING_INVALID_RESPONSE", fmt.Sprintf("ping result parse error: %v", err))}
+	}
+	if obj, ok := result.(map[string]any); !ok || len(obj) != 0 {
+		return []finding{newMCPFinding(config, "MCP_PING_INVALID_RESPONSE", "ping result not empty object")}
+	}
+	return nil
+}
+
+func checkToolSchemas(config scanConfig, raw json.RawMessage) []finding {
+	findings := []finding{}
+	if len(raw) == 0 {
+		return findings
+	}
+	var result mcpToolsListDetailResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return []finding{newMCPFinding(config, "MCP_TOOLS_LIST_INVALID", fmt.Sprintf("tools/list parse error: %v", err))}
+	}
+	for _, tool := range result.Tools {
+		if len(tool.InputSchema) == 0 {
+			findings = append(findings, newMCPFinding(config, "MCP_TOOL_INPUT_SCHEMA_MISSING", fmt.Sprintf("tool %q missing inputSchema", tool.Name)))
+			continue
+		}
+		var schema any
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			findings = append(findings, newMCPFinding(config, "MCP_TOOL_INPUT_SCHEMA_INVALID", fmt.Sprintf("tool %q inputSchema parse error", tool.Name)))
+			continue
+		}
+		if schema == nil {
+			findings = append(findings, newMCPFinding(config, "MCP_TOOL_INPUT_SCHEMA_INVALID", fmt.Sprintf("tool %q inputSchema null", tool.Name)))
+			continue
+		}
+		if _, ok := schema.(map[string]any); !ok {
+			findings = append(findings, newMCPFinding(config, "MCP_TOOL_INPUT_SCHEMA_INVALID", fmt.Sprintf("tool %q inputSchema not object", tool.Name)))
+		}
+	}
+	return findings
+}
+
+func checkToolIcons(config scanConfig, raw json.RawMessage) []finding {
+	findings := []finding{}
+	if len(raw) == 0 {
+		return findings
+	}
+	var result mcpToolsListDetailResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return findings
+	}
+	for _, tool := range result.Tools {
+		for key, value := range tool.Annotations {
+			if !strings.Contains(strings.ToLower(key), "icon") {
+				continue
+			}
+			uri, ok := value.(string)
+			if !ok || strings.TrimSpace(uri) == "" {
+				continue
+			}
+			if !isSafeIconURI(uri) {
+				findings = append(findings, newMCPFinding(config, "MCP_ICON_UNSAFE_SCHEME", fmt.Sprintf("tool %q icon %q", tool.Name, uri)))
+			}
+		}
+	}
+	return findings
+}
+
+func supportsTasks(capabilities map[string]any) bool {
+	if capabilities == nil {
+		return false
+	}
+	if value, ok := capabilities["tasks"]; ok {
+		if enabled, ok := value.(bool); ok {
+			return enabled
+		}
+		if _, ok := value.(map[string]any); ok {
+			return true
+		}
+	}
+	if value, ok := capabilities["taskSupport"].(bool); ok {
+		return value
+	}
+	return false
+}
+
+func tasksAdvertised(initResult map[string]any) bool {
+	if initResult == nil {
+		return false
+	}
+	if value, ok := initResult["taskSupport"].(bool); ok {
+		return value
+	}
+	if value, ok := initResult["tasks"]; ok {
+		if enabled, ok := value.(bool); ok {
+			return enabled
+		}
+		if _, ok := value.(map[string]any); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func checkTasksSupport(client *http.Client, config scanConfig, sessionID string, trace *[]traceEntry, stdout io.Writer) []finding {
+	tasksRequest := jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      4,
+		Method:  "tasks/list",
+	}
+	resp, _, payload, err := postJSONRPC(client, config, config.Target, tasksRequest, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (tasks/list)")
+	if err != nil {
+		return []finding{newMCPFinding(config, "MCP_TASKS_METHOD_MISSING", fmt.Sprintf("tasks/list error: %v", err))}
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return []finding{newMCPFinding(config, "MCP_TASKS_METHOD_MISSING", "tasks/list returned 404")}
+	}
+	if payload != nil && payload.Error != nil && payload.Error.Code == -32601 {
+		return []finding{newMCPFinding(config, "MCP_TASKS_METHOD_MISSING", "tasks/list method not found")}
+	}
+	return validateJSONRPCResponse(config, payload, tasksRequest.ID, "tasks/list")
+}
+
+func isSafeIconURI(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https", "data":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasHighSeverity(findings []finding) bool {
+	for _, f := range findings {
+		if f.Severity == "high" {
+			return true
+		}
+	}
+	return false
 }
 
 func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEndpoints []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
@@ -1072,6 +1574,11 @@ func isJSONContentType(contentType string) bool {
 	return strings.HasPrefix(lower, "application/json") || strings.Contains(lower, "+json")
 }
 
+func isSSEContentType(contentType string) bool {
+	lower := strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(lower, "text/event-stream")
+}
+
 type fetchPolicyError struct {
 	Code   string
 	Detail string
@@ -1086,6 +1593,14 @@ func rfcModeEnabled(mode string) bool {
 }
 
 func rfcModeStrict(mode string) bool {
+	return strings.EqualFold(mode, "strict")
+}
+
+func mcpModeEnabled(mode string) bool {
+	return mode != "off"
+}
+
+func mcpModeStrict(mode string) bool {
 	return strings.EqualFold(mode, "strict")
 }
 
@@ -1400,6 +1915,45 @@ func newFinding(code string, evidence string) finding {
 	return f
 }
 
+func newMCPFinding(config scanConfig, code string, evidence string) finding {
+	if mcpModeStrict(config.MCPMode) && isMCPStrictUpgrade(code) {
+		return newFindingWithSeverity(code, evidence, "high")
+	}
+	return newFinding(code, evidence)
+}
+
+func newFindingWithSeverity(code string, evidence string, severity string) finding {
+	confidence := findingConfidence(code)
+	f := finding{Code: code, Severity: severity, Confidence: confidence}
+	if evidence != "" {
+		f.Evidence = []string{evidence}
+	}
+	if explanation := findingRFCExplanation(code); explanation != "" {
+		f.Evidence = append(f.Evidence, explanation)
+	}
+	return f
+}
+
+func isMCPStrictUpgrade(code string) bool {
+	switch code {
+	case "MCP_NOTIFICATION_STATUS_INVALID",
+		"MCP_NOTIFICATION_BODY_PRESENT",
+		"MCP_ORIGIN_NOT_VALIDATED",
+		"MCP_PROTOCOL_VERSION_MISMATCH",
+		"MCP_PROTOCOL_VERSION_REJECTION_MISSING",
+		"MCP_SESSION_ID_REJECTION_MISSING",
+		"MCP_PING_INVALID_RESPONSE",
+		"MCP_ICON_UNSAFE_SCHEME",
+		"MCP_TASKS_METHOD_MISSING",
+		"MCP_INITIALIZE_RESULT_INVALID",
+		"MCP_CAPABILITIES_INVALID",
+		"MCP_TOOLS_LIST_INVALID":
+		return true
+	default:
+		return false
+	}
+}
+
 func newFindingWithEvidence(code string, evidence []string) finding {
 	severity := findingSeverity(code)
 	confidence := findingConfidence(code)
@@ -1477,6 +2031,50 @@ func findingRFCExplanation(code string) string {
 		return "MCP servers should respond to tools/list with a valid JSON result enumerating tools per the MCP specification."
 	case "MCP_PROBE_TIMEOUT":
 		return "MCP spec: \"The server MUST either return Content-Type: text/event-stream for GET requests or else return 405 Method Not Allowed.\" Timing out before headers indicates non-compliance."
+	case "MCP_GET_NOT_SSE":
+		return "MCP streamable HTTP requires GET requests to return Server-Sent Events (text/event-stream) or a 405 Method Not Allowed."
+	case "MCP_JSONRPC_ID_NULL_ACCEPTED":
+		return "MCP JSON-RPC requires request IDs to be strings or numbers; null IDs must be rejected."
+	case "MCP_NOTIFICATION_WITH_ID_ACCEPTED":
+		return "MCP JSON-RPC notifications must omit the id member."
+	case "MCP_JSONRPC_RESPONSE_ID_MISMATCH":
+		return "MCP JSON-RPC responses must echo the request id."
+	case "MCP_JSONRPC_RESPONSE_INVALID":
+		return "MCP JSON-RPC responses must include jsonrpc: \"2.0\" and exactly one of result or error."
+	case "MCP_PROTOCOL_VERSION_MISSING":
+		return "MCP initialize responses must include protocolVersion for explicit version negotiation."
+	case "MCP_INITIALIZE_ORDERING_NOT_ENFORCED":
+		return "MCP servers must require initialize before other requests such as tools/list."
+	case "MCP_PROTOCOL_VERSION_MISMATCH":
+		return "MCP version negotiation should be explicit and consistent with the requested protocolVersion."
+	case "MCP_NOTIFICATION_STATUS_INVALID":
+		return "MCP streamable HTTP responses to notifications should return 202 Accepted with no body."
+	case "MCP_NOTIFICATION_BODY_PRESENT":
+		return "MCP streamable HTTP notifications should not return a response body."
+	case "MCP_NOTIFICATION_FAILED":
+		return "MCP servers should accept notifications/initialized after initialize completes."
+	case "MCP_ORIGIN_NOT_VALIDATED":
+		return "MCP servers should validate Origin to mitigate DNS rebinding and return 403 for invalid origins."
+	case "MCP_PROTOCOL_VERSION_REJECTION_MISSING":
+		return "MCP servers that enforce MCP-Protocol-Version should respond with 400 for invalid values."
+	case "MCP_SESSION_ID_REJECTION_MISSING":
+		return "MCP servers that enforce MCP-Session-Id should respond with 404 for invalid session IDs."
+	case "MCP_PING_INVALID_RESPONSE":
+		return "When implemented, ping must return an empty JSON object promptly."
+	case "MCP_INITIALIZE_RESULT_INVALID":
+		return "MCP initialize results must be JSON objects with protocolVersion and capabilities."
+	case "MCP_CAPABILITIES_INVALID":
+		return "MCP initialize capabilities must be a JSON object."
+	case "MCP_TOOL_INPUT_SCHEMA_MISSING":
+		return "MCP tool inputSchema must be present and be a JSON Schema object."
+	case "MCP_TOOL_INPUT_SCHEMA_INVALID":
+		return "MCP tool inputSchema must be a parseable JSON Schema object."
+	case "MCP_TOOLS_LIST_INVALID":
+		return "MCP tools/list results must be JSON objects with a tools array."
+	case "MCP_TASKS_METHOD_MISSING":
+		return "When tasks capability is advertised, the corresponding tasks methods must exist."
+	case "MCP_ICON_UNSAFE_SCHEME":
+		return "MCP icon metadata should use safe URI schemes such as https: or data:."
 	case "METADATA_SSRF_BLOCKED":
 		return "Metadata fetch blocked by local SSRF protections; issuer metadata should be on a permitted host."
 	case "METADATA_REDIRECT_BLOCKED":
@@ -1514,18 +2112,40 @@ func findingSeverity(code string) string {
 		"AUTH_SERVER_METADATA_INVALID",
 		"MCP_INITIALIZE_FAILED",
 		"MCP_TOOLS_LIST_FAILED",
-		"MCP_PROBE_TIMEOUT":
+		"MCP_PROBE_TIMEOUT",
+		"MCP_GET_NOT_SSE",
+		"MCP_JSONRPC_ID_NULL_ACCEPTED",
+		"MCP_INITIALIZE_ORDERING_NOT_ENFORCED",
+		"MCP_NOTIFICATION_WITH_ID_ACCEPTED",
+		"MCP_JSONRPC_RESPONSE_ID_MISMATCH",
+		"MCP_JSONRPC_RESPONSE_INVALID",
+		"MCP_PROTOCOL_VERSION_MISSING",
+		"MCP_INITIALIZE_RESULT_INVALID",
+		"MCP_TOOLS_LIST_INVALID",
+		"MCP_TASKS_METHOD_MISSING",
+		"MCP_TOOL_INPUT_SCHEMA_MISSING",
+		"MCP_TOOL_INPUT_SCHEMA_INVALID":
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
 		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
 		"SCOPES_WHITESPACE_RISK",
 		"TOKEN_RESPONSE_NOT_JSON_RISK",
-		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
+		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK",
+		"MCP_NOTIFICATION_STATUS_INVALID",
+		"MCP_PROTOCOL_VERSION_MISMATCH",
+		"MCP_PROTOCOL_VERSION_REJECTION_MISSING",
+		"MCP_SESSION_ID_REJECTION_MISSING",
+		"MCP_PING_INVALID_RESPONSE",
+		"MCP_CAPABILITIES_INVALID":
 		return "medium"
 	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH",
 		"AUTH_SERVER_PKCE_S256_MISSING",
 		"AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH",
-		"AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED":
+		"AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED",
+		"MCP_NOTIFICATION_BODY_PRESENT",
+		"MCP_NOTIFICATION_FAILED",
+		"MCP_ORIGIN_NOT_VALIDATED",
+		"MCP_ICON_UNSAFE_SCHEME":
 		return "low"
 	default:
 		return "low"
@@ -1846,6 +2466,7 @@ func renderMarkdown(report scanReport) string {
 	fmt.Fprintf(&md, "Scanning: %s\n\n", report.Target)
 	fmt.Fprintf(&md, "- Target: %s\n", report.Target)
 	fmt.Fprintf(&md, "- Profile: %s\n", report.Profile)
+	fmt.Fprintf(&md, "- MCP: %s\n", report.MCPMode)
 	fmt.Fprintf(&md, "- RFC9728: %s\n", report.RFC9728Mode)
 	fmt.Fprintf(&md, "- RFC3986: %s\n", report.RFC3986Mode)
 	fmt.Fprintf(&md, "- RFC8414: %s\n", report.RFC8414Mode)

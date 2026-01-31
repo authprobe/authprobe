@@ -24,6 +24,9 @@ FLAGS:
                            Connection timeout in seconds. Default: 10
       --retries <n>        Retry failed GETs for metadata endpoints. Default: 1
 
+      --mcp <mode>         MCP 2025-11-25 conformance checks (Streamable HTTP + JSON-RPC).
+                           Options: off, best-effort, strict
+                           Default: best-effort
       --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
                            Options: off, best-effort, strict
                            Default: best-effort
