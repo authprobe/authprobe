@@ -58,6 +58,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.Bool("allow-private-issuers", false, "")
 	// Skip TLS certificate verification; useful for dev/testing with self-signed certs
 	fs.Bool("insecure", false, "")
+	// Disable automatic HTTP redirect following; useful for debugging redirect chains
+	// and analyzing redirect behavior without following to final destination
 	fs.Bool("no-follow-redirects", false, "")
 	fs.String("fail-on", "high", "")
 	fs.String("json", "", "")

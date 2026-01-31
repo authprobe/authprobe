@@ -31,7 +31,7 @@ type scanConfig struct {
 	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
 	AllowPrivateIssuers bool
 	Insecure            bool // Skip TLS certificate verification (dev only)
-	NoFollowRedirects   bool
+	NoFollowRedirects   bool // Stop at first response, don't follow HTTP redirects
 	JSONPath            string
 	MDPath              string
 	BundlePath          string

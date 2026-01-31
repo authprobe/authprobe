@@ -68,6 +68,7 @@ Common flags:
 - `--rfc <mode>` (off, best-effort, strict RFC conformance checks)
 - `--allow-private-issuers` (bypass [SSRF protection](docs/ssrf-protection.md) for internal networks)
 - `--insecure` (skip TLS certificate verification; for dev/testing with self-signed certs)
+- `--no-follow-redirects` (stop at first response; useful for debugging redirect chains)
 - `--verbose` (print request/response headers + bodies during scan)
 - `--explain` (print RFC rationale for each scan step)
 - `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)
