@@ -665,7 +665,8 @@ func TestProbeMCP_200WithWrongContentType(t *testing.T) {
 }
 
 func TestProbeMCP_405MethodNotAllowed(t *testing.T) {
-	// Server returns 405 Method Not Allowed - continue discovery
+	// Server returns 405 Method Not Allowed - auth not required
+	// 405 means server doesn't support GET/SSE, but doesn't indicate auth is needed
 	mockServer := &mockProbeServer{
 		StatusCode: http.StatusMethodNotAllowed,
 	}
@@ -686,11 +687,11 @@ func TestProbeMCP_405MethodNotAllowed(t *testing.T) {
 		t.Fatalf("probeMCP failed: %v", err)
 	}
 
-	if !authRequired {
-		t.Error("expected authRequired=true for 405 (continue discovery)")
+	if authRequired {
+		t.Error("expected authRequired=false for 405 (auth not required)")
 	}
 
-	expectedSummary := "probe returned 405; continuing discovery"
+	expectedSummary := "probe returned 405; auth not required"
 	if summary != expectedSummary {
 		t.Errorf("summary: got %q, want %q", summary, expectedSummary)
 	}

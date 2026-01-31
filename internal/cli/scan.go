@@ -172,8 +172,10 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	}
 
 	if resp.StatusCode != http.StatusUnauthorized {
+		// 405 Method Not Allowed means the server doesn't support GET/SSE, but doesn't indicate auth is required.
+		// Only a 401 response with WWW-Authenticate indicates OAuth discovery is needed.
 		if resp.StatusCode == http.StatusMethodNotAllowed {
-			return "", resolvedTarget(resp, config.Target), findings, fmt.Sprintf("probe returned %d; continuing discovery", resp.StatusCode), true, nil
+			return "", resolvedTarget(resp, config.Target), findings, fmt.Sprintf("probe returned %d; auth not required", resp.StatusCode), false, nil
 		}
 		return "", resolvedTarget(resp, config.Target), findings, "auth not required", false, nil
 	}
