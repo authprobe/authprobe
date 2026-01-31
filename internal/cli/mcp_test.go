@@ -438,3 +438,407 @@ func containsSubstringHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// =============================================================================
+// probeMCP Tests
+// =============================================================================
+
+// mockProbeServer creates a test HTTP server for testing the probeMCP function.
+// It handles GET requests and returns configurable responses.
+type mockProbeServer struct {
+	// StatusCode to return (default 200)
+	StatusCode int
+	// WWWAuthenticate header value (for 401 responses)
+	WWWAuthenticate string
+	// ContentType header value
+	ContentType string
+	// Body to return
+	Body string
+}
+
+func (m *mockProbeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Verify it's a GET request with the expected Accept header
+	if r.Method != http.MethodGet {
+		// For non-GET, let it through but return the configured status
+	}
+
+	if m.ContentType != "" {
+		w.Header().Set("Content-Type", m.ContentType)
+	}
+	if m.WWWAuthenticate != "" {
+		w.Header().Set("WWW-Authenticate", m.WWWAuthenticate)
+	}
+
+	statusCode := m.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	w.WriteHeader(statusCode)
+	if m.Body != "" {
+		w.Write([]byte(m.Body))
+	}
+}
+
+func TestProbeMCP_401WithResourceMetadata(t *testing.T) {
+	// Server returns 401 with WWW-Authenticate containing resource_metadata
+	mockServer := &mockProbeServer{
+		StatusCode:      http.StatusUnauthorized,
+		WWWAuthenticate: `Bearer resource_metadata="https://auth.example.com/.well-known/oauth-protected-resource"`,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+	}
+
+	var trace []traceEntry
+	resourceMetadata, resolvedTarget, findings, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if !authRequired {
+		t.Error("expected authRequired=true")
+	}
+
+	if resourceMetadata != "https://auth.example.com/.well-known/oauth-protected-resource" {
+		t.Errorf("resourceMetadata: got %q, want %q", resourceMetadata, "https://auth.example.com/.well-known/oauth-protected-resource")
+	}
+
+	if resolvedTarget != server.URL {
+		t.Errorf("resolvedTarget: got %q, want %q", resolvedTarget, server.URL)
+	}
+
+	if summary != "401 with resource_metadata" {
+		t.Errorf("summary: got %q, want %q", summary, "401 with resource_metadata")
+	}
+
+	// Should have no findings for a proper 401 response
+	for _, f := range findings {
+		if f.Code == "DISCOVERY_NO_WWW_AUTHENTICATE" {
+			t.Errorf("unexpected finding: %s", f.Code)
+		}
+	}
+
+	// Verify trace was recorded
+	if len(trace) != 1 {
+		t.Errorf("expected 1 trace entry, got %d", len(trace))
+	}
+}
+
+func TestProbeMCP_401WithoutResourceMetadata(t *testing.T) {
+	// Server returns 401 but WWW-Authenticate doesn't contain resource_metadata
+	mockServer := &mockProbeServer{
+		StatusCode:      http.StatusUnauthorized,
+		WWWAuthenticate: `Bearer realm="example"`,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+	}
+
+	var trace []traceEntry
+	resourceMetadata, _, findings, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if !authRequired {
+		t.Error("expected authRequired=true")
+	}
+
+	if resourceMetadata != "" {
+		t.Errorf("resourceMetadata should be empty, got %q", resourceMetadata)
+	}
+
+	if summary != "missing WWW-Authenticate/resource_metadata" {
+		t.Errorf("summary: got %q, want %q", summary, "missing WWW-Authenticate/resource_metadata")
+	}
+
+	// Should have a finding about missing resource_metadata
+	found := false
+	for _, f := range findings {
+		if f.Code == "DISCOVERY_NO_WWW_AUTHENTICATE" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected DISCOVERY_NO_WWW_AUTHENTICATE finding")
+	}
+}
+
+func TestProbeMCP_200OK(t *testing.T) {
+	// Server returns 200 OK - no auth required
+	mockServer := &mockProbeServer{
+		StatusCode:  http.StatusOK,
+		ContentType: "text/event-stream",
+		Body:        "data: hello\n\n",
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+	}
+
+	var trace []traceEntry
+	resourceMetadata, _, findings, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if authRequired {
+		t.Error("expected authRequired=false for 200 OK")
+	}
+
+	if resourceMetadata != "" {
+		t.Errorf("resourceMetadata should be empty for 200 OK, got %q", resourceMetadata)
+	}
+
+	if summary != "auth not required" {
+		t.Errorf("summary: got %q, want %q", summary, "auth not required")
+	}
+
+	// No MCP findings expected for proper SSE content type
+	for _, f := range findings {
+		if f.Code == "MCP_GET_NOT_SSE" {
+			t.Errorf("unexpected MCP_GET_NOT_SSE finding")
+		}
+	}
+}
+
+func TestProbeMCP_200WithWrongContentType(t *testing.T) {
+	// Server returns 200 but with wrong content type (not SSE)
+	mockServer := &mockProbeServer{
+		StatusCode:  http.StatusOK,
+		ContentType: "application/json",
+		Body:        `{"error": "not SSE"}`,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+	}
+
+	var trace []traceEntry
+	_, _, findings, _, authRequired, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if authRequired {
+		t.Error("expected authRequired=false for 200")
+	}
+
+	// Should have MCP finding about wrong content type
+	found := false
+	for _, f := range findings {
+		if f.Code == "MCP_GET_NOT_SSE" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected MCP_GET_NOT_SSE finding for non-SSE content type")
+	}
+}
+
+func TestProbeMCP_405MethodNotAllowed(t *testing.T) {
+	// Server returns 405 Method Not Allowed - continue discovery
+	mockServer := &mockProbeServer{
+		StatusCode: http.StatusMethodNotAllowed,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+	}
+
+	var trace []traceEntry
+	_, _, _, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if !authRequired {
+		t.Error("expected authRequired=true for 405 (continue discovery)")
+	}
+
+	expectedSummary := "probe returned 405; continuing discovery"
+	if summary != expectedSummary {
+		t.Errorf("summary: got %q, want %q", summary, expectedSummary)
+	}
+}
+
+func TestProbeMCP_403Forbidden(t *testing.T) {
+	// Server returns 403 Forbidden - auth not required (different from 401)
+	mockServer := &mockProbeServer{
+		StatusCode: http.StatusForbidden,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+	}
+
+	var trace []traceEntry
+	_, _, _, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if authRequired {
+		t.Error("expected authRequired=false for 403")
+	}
+
+	if summary != "auth not required" {
+		t.Errorf("summary: got %q, want %q", summary, "auth not required")
+	}
+}
+
+func TestProbeMCP_WithCustomHeaders(t *testing.T) {
+	// Verify custom headers are sent
+	var receivedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+		Headers: []string{"X-Custom-Header: custom-value", "Authorization: Bearer token123"},
+	}
+
+	var trace []traceEntry
+	_, _, _, _, _, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	if receivedHeaders.Get("X-Custom-Header") != "custom-value" {
+		t.Errorf("X-Custom-Header: got %q, want %q", receivedHeaders.Get("X-Custom-Header"), "custom-value")
+	}
+
+	if receivedHeaders.Get("Authorization") != "Bearer token123" {
+		t.Errorf("Authorization: got %q, want %q", receivedHeaders.Get("Authorization"), "Bearer token123")
+	}
+
+	// Verify Accept header is set correctly
+	if receivedHeaders.Get("Accept") != "text/event-stream" {
+		t.Errorf("Accept: got %q, want %q", receivedHeaders.Get("Accept"), "text/event-stream")
+	}
+}
+
+func TestProbeMCP_VerboseOutput(t *testing.T) {
+	mockServer := &mockProbeServer{
+		StatusCode:  http.StatusOK,
+		ContentType: "text/event-stream",
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+		Verbose: true,
+	}
+
+	var trace []traceEntry
+	var verboseOutput []byte
+	buf := &captureWriter{buf: &verboseOutput}
+
+	_, _, _, _, _, err := probeMCP(client, config, &trace, buf)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	output := string(verboseOutput)
+
+	// Check that verbose output contains expected elements
+	if !containsSubstring(output, "Step 1: MCP probe") {
+		t.Error("verbose output missing step heading")
+	}
+
+	if !containsSubstring(output, "GET") {
+		t.Error("verbose output missing request method")
+	}
+}
+
+// captureWriter is a simple io.Writer that captures output to a byte slice
+type captureWriter struct {
+	buf *[]byte
+}
+
+func (c *captureWriter) Write(p []byte) (n int, err error) {
+	*c.buf = append(*c.buf, p...)
+	return len(p), nil
+}
+
+func TestProbeMCP_MCPModeOff(t *testing.T) {
+	// When MCP mode is off, should not generate MCP-specific findings
+	mockServer := &mockProbeServer{
+		StatusCode:  http.StatusOK,
+		ContentType: "application/json", // Wrong content type
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	client := &http.Client{}
+	config := scanConfig{
+		Target:  server.URL,
+		MCPMode: "off", // MCP mode disabled
+	}
+
+	var trace []traceEntry
+	_, _, findings, _, _, err := probeMCP(client, config, &trace, io.Discard)
+
+	if err != nil {
+		t.Fatalf("probeMCP failed: %v", err)
+	}
+
+	// Should NOT have MCP finding when mode is off
+	for _, f := range findings {
+		if f.Code == "MCP_GET_NOT_SSE" {
+			t.Error("should not have MCP_GET_NOT_SSE finding when MCP mode is off")
+		}
+	}
+}
