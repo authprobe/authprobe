@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -54,9 +55,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Int("timeout", 8, "")
 	fs.String("mcp", "best-effort", "")
 	fs.String("rfc", "best-effort", "")
-	// SSRF protection: by default, block fetching metadata from private/loopback/link-local
-	// addresses (RFC 1918, RFC 6890). Set to true for internal/enterprise deployments.
 	fs.Bool("allow-private-issuers", false, "")
+	// Skip TLS certificate verification; useful for dev/testing with self-signed certs
 	fs.Bool("insecure", false, "")
 	fs.Bool("no-follow-redirects", false, "")
 	fs.String("fail-on", "high", "")
@@ -92,6 +92,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		MCPMode:             fs.Lookup("mcp").Value.String(),
 		RFCMode:             fs.Lookup("rfc").Value.String(),
 		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
+		Insecure:            fs.Lookup("insecure").Value.String() == "true",
 		NoFollowRedirects:   fs.Lookup("no-follow-redirects").Value.String() == "true",
 		JSONPath:            fs.Lookup("json").Value.String(),
 		MDPath:              fs.Lookup("md").Value.String(),
@@ -105,6 +106,11 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	}
 	if *toolList || *toolDetail != "" {
 		client := &http.Client{Timeout: config.Timeout}
+		if config.Insecure {
+			client.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+		}
 		if config.NoFollowRedirects {
 			client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse

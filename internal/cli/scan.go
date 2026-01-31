@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ type scanConfig struct {
 	MCPMode             string
 	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
 	AllowPrivateIssuers bool
+	Insecure            bool // Skip TLS certificate verification (dev only)
 	NoFollowRedirects   bool
 	JSONPath            string
 	MDPath              string
@@ -126,6 +128,12 @@ func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer)
 	}
 
 	client := &http.Client{Timeout: config.Timeout}
+	if config.Insecure {
+		// Skip TLS certificate verification (dev/testing only)
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
 	if config.NoFollowRedirects {
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
