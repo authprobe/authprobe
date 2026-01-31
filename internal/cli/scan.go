@@ -26,22 +26,9 @@ type scanConfig struct {
 	Timeout             time.Duration
 	Verbose             bool
 	Explain             bool
-	ShowTrace           bool
 	FailOn              string
 	MCPMode             string
-	RFC9728Mode         string
-	RFC3986Mode         string
-	RFC8414Mode         string
-	RFC8707Mode         string
-	RFC9207Mode         string
-	RFC6750Mode         string
-	RFC7517Mode         string
-	RFC7519Mode         string
-	RFC7636Mode         string
-	RFC6749Mode         string
-	RFC1918Mode         string
-	RFC6890Mode         string
-	RFC9110Mode         string
+	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
 	AllowPrivateIssuers bool
 	NoFollowRedirects   bool
 	JSONPath            string
@@ -54,19 +41,7 @@ type scanReport struct {
 	Target         string     `json:"target"`
 	Profile        string     `json:"profile"`
 	MCPMode        string     `json:"mcp_mode"`
-	RFC9728Mode    string     `json:"rfc9728_mode"`
-	RFC3986Mode    string     `json:"rfc3986_mode"`
-	RFC8414Mode    string     `json:"rfc8414_mode"`
-	RFC8707Mode    string     `json:"rfc8707_mode"`
-	RFC9207Mode    string     `json:"rfc9207_mode"`
-	RFC6750Mode    string     `json:"rfc6750_mode"`
-	RFC7517Mode    string     `json:"rfc7517_mode"`
-	RFC7519Mode    string     `json:"rfc7519_mode"`
-	RFC7636Mode    string     `json:"rfc7636_mode"`
-	RFC6749Mode    string     `json:"rfc6749_mode"`
-	RFC1918Mode    string     `json:"rfc1918_mode"`
-	RFC6890Mode    string     `json:"rfc6890_mode"`
-	RFC9110Mode    string     `json:"rfc9110_mode"`
+	RFCMode        string     `json:"rfc_mode"`
 	Timestamp      string     `json:"timestamp"`
 	Steps          []scanStep `json:"steps"`
 	Findings       []finding  `json:"findings"`
@@ -146,23 +121,11 @@ const mcpProtocolVersion = "2025-11-25"
 
 func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
 	report := scanReport{
-		Target:      config.Target,
-		Profile:     config.Profile,
-		MCPMode:     config.MCPMode,
-		RFC9728Mode: config.RFC9728Mode,
-		RFC3986Mode: config.RFC3986Mode,
-		RFC8414Mode: config.RFC8414Mode,
-		RFC8707Mode: config.RFC8707Mode,
-		RFC9207Mode: config.RFC9207Mode,
-		RFC6750Mode: config.RFC6750Mode,
-		RFC7517Mode: config.RFC7517Mode,
-		RFC7519Mode: config.RFC7519Mode,
-		RFC7636Mode: config.RFC7636Mode,
-		RFC6749Mode: config.RFC6749Mode,
-		RFC1918Mode: config.RFC1918Mode,
-		RFC6890Mode: config.RFC6890Mode,
-		RFC9110Mode: config.RFC9110Mode,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Target:    config.Target,
+		Profile:   config.Profile,
+		MCPMode:   config.MCPMode,
+		RFCMode:   config.RFCMode,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
 	client := &http.Client{Timeout: config.Timeout}
@@ -384,12 +347,12 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	}
 
 	findings := []finding{}
-	if rfcModeEnabled(config.RFC3986Mode) {
+	if rfcModeEnabled(config.RFCMode) {
 		if urlFindings := validateURLString(config.Target, "resource", config, false); len(urlFindings) > 0 {
 			findings = append(findings, urlFindings...)
 		}
 		if parsedTarget, err := url.Parse(config.Target); err == nil && parsedTarget.Fragment != "" {
-			if rfcModeEnabled(config.RFC8707Mode) {
+			if rfcModeEnabled(config.RFCMode) {
 				findings = append(findings, newFinding("RESOURCE_FRAGMENT_FORBIDDEN", fmt.Sprintf("resource %q includes fragment (RFC 8707)", config.Target)))
 			}
 		}
@@ -401,14 +364,14 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	pathSuffixSeen := false
 	pathSuffixOK := false
 	for _, candidate := range candidates {
-		reportFindings := config.RFC9728Mode != "off"
+		reportFindings := config.RFCMode != "off"
 		if hasPathSuffix {
 			reportFindings = candidate.Source == "path-suffix"
 		}
 		if candidate.Source == "path-suffix" {
 			pathSuffixSeen = true
 		}
-		if rfcModeEnabled(config.RFC3986Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(candidate.URL, fmt.Sprintf("prm(%s)", candidate.Source), config, false); len(urlFindings) > 0 {
 				findings = append(findings, urlFindings...)
 			}
@@ -464,7 +427,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			if prm.Resource != "" && prm.Resource != expectedResource {
 				findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, expectedResource)))
 			}
-			if rfcModeEnabled(config.RFC8707Mode) {
+			if rfcModeEnabled(config.RFCMode) {
 				if parsedResource, err := url.Parse(prm.Resource); err == nil && parsedResource.Fragment != "" {
 					findings = append(findings, newFinding("RESOURCE_FRAGMENT_FORBIDDEN", fmt.Sprintf("%s resource %q includes fragment (RFC 8707)", candidate.Source, prm.Resource)))
 				}
@@ -542,12 +505,12 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 		if issuer == "" {
 			continue
 		}
-		if rfcModeEnabled(config.RFC3986Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(issuer, "issuer", config, false); len(urlFindings) > 0 {
 				findings = append(findings, urlFindings...)
 			}
 		}
-		if rfcModeEnabled(config.RFC8414Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if parsedIssuer, err := url.Parse(issuer); err == nil {
 				if parsedIssuer.RawQuery != "" || parsedIssuer.Fragment != "" {
 					findings = append(findings, newFinding("AUTH_SERVER_ISSUER_QUERY_FRAGMENT", fmt.Sprintf("issuer %q has query/fragment (RFC 8414)", issuer)))
@@ -576,7 +539,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s status %d", issuer, resp.StatusCode)))
 			continue
 		}
-		if rfcModeEnabled(config.RFC8414Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			contentType := resp.Header.Get("Content-Type")
 			if !strings.HasPrefix(contentType, "application/json") {
 				findings = append(findings, newFinding("AUTH_SERVER_METADATA_CONTENT_TYPE_NOT_JSON", fmt.Sprintf("%s content-type %q", issuer, contentType)))
@@ -588,7 +551,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s response not JSON object", issuer)))
 			continue
 		}
-		if rfcModeEnabled(config.RFC8414Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if issuerValue, ok := obj["issuer"].(string); ok {
 				if issuerValue != issuer {
 					findings = append(findings, newFindingWithEvidence("AUTH_SERVER_ISSUER_MISMATCH", []string{
@@ -611,17 +574,17 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing token_endpoint", issuer)))
 			continue
 		}
-		if rfcModeEnabled(config.RFC3986Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(authorizationEndpoint, "authorization_endpoint", config, false); len(urlFindings) > 0 {
 				findings = append(findings, urlFindings...)
 			}
 		}
-		if rfcModeEnabled(config.RFC3986Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(tokenEndpoint, "token_endpoint", config, false); len(urlFindings) > 0 {
 				findings = append(findings, urlFindings...)
 			}
 		}
-		if rfcModeEnabled(config.RFC8414Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			parsedIssuer, err := url.Parse(issuer)
 			if err == nil {
 				issuerHost := parsedIssuer.Hostname()
@@ -645,14 +608,14 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				findings = append(findings, newFinding("SCOPES_WHITESPACE_RISK", fmt.Sprintf("scopes_supported contains whitespace: %s", strings.Join(badScopes, ", "))))
 			}
 		}
-		if rfcModeEnabled(config.RFC8707Mode) && prm.Resource != "" {
+		if rfcModeEnabled(config.RFCMode) && prm.Resource != "" {
 			if protectedResources, ok := obj["protected_resources"].([]any); ok && len(protectedResources) > 0 {
 				if !containsString(protectedResources, prm.Resource) {
 					findings = append(findings, newFinding("AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH", fmt.Sprintf("resource %q not in protected_resources", prm.Resource)))
 				}
 			}
 		}
-		if rfcModeEnabled(config.RFC7517Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if jwksURI, ok := obj["jwks_uri"].(string); ok && jwksURI != "" {
 				if urlFindings := validateURLString(jwksURI, "jwks_uri", config, false); len(urlFindings) > 0 {
 					findings = append(findings, urlFindings...)
@@ -757,12 +720,12 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 		if err != nil {
 			return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("invalid redirect Location %q", location)}
 		}
-		if rfcModeEnabled(config.RFC9110Mode) {
+		if rfcModeEnabled(config.RFCMode) {
 			if !next.IsAbs() {
 				return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("redirect Location not absolute: %q", location)}
 			}
-			if rfcModeEnabled(config.RFC3986Mode) && !isHTTPSURL(next) {
-				if rfcModeStrict(config.RFC9110Mode) {
+			if rfcModeEnabled(config.RFCMode) && !isHTTPSURL(next) {
+				if rfcModeStrict(config.RFCMode) {
 					return resp, body, fetchPolicyError{Code: "METADATA_REDIRECT_BLOCKED", Detail: fmt.Sprintf("redirect Location not https: %q", location)}
 				}
 			}
@@ -1621,7 +1584,7 @@ func validateFetchTarget(config scanConfig, target string) error {
 	if config.AllowPrivateIssuers {
 		return nil
 	}
-	if !rfcModeEnabled(config.RFC1918Mode) && !rfcModeEnabled(config.RFC6890Mode) {
+	if !rfcModeEnabled(config.RFCMode) && !rfcModeEnabled(config.RFCMode) {
 		return nil
 	}
 	parsed, err := url.Parse(target)
@@ -1655,7 +1618,7 @@ func isDisallowedIP(ip net.IP) bool {
 }
 
 func validateURLString(raw string, label string, config scanConfig, allowRelative bool) []finding {
-	if !rfcModeEnabled(config.RFC3986Mode) {
+	if !rfcModeEnabled(config.RFCMode) {
 		return nil
 	}
 	findings := []finding{}

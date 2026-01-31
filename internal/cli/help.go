@@ -27,43 +27,7 @@ FLAGS:
       --mcp <mode>         MCP 2025-11-25 conformance checks (Streamable HTTP + JSON-RPC).
                            Options: off, best-effort, strict
                            Default: best-effort
-      --rfc9728 <mode>     RFC 9728 conformance checks for protected resource metadata.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc3986 <mode>     RFC 3986 URI parsing + HTTPS checks for metadata URLs.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc8414 <mode>     RFC 8414 authorization server metadata checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc8707 <mode>     RFC 8707 resource indicator checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc9207 <mode>     RFC 9207 issuer identification checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc6750 <mode>     RFC 6750 bearer token method checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc7517 <mode>     RFC 7517 JWKS shape validation checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc7519 <mode>     RFC 7519 JWT claim validation checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc7636 <mode>     RFC 7636 PKCE posture checks.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc6749 <mode>     RFC 6749 OAuth endpoint behavior probes.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc1918 <mode>     RFC 1918 private-range SSRF protections.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc6890 <mode>     RFC 6890 special-purpose range SSRF protections.
-                           Options: off, best-effort, strict
-                           Default: best-effort
-      --rfc9110 <mode>     RFC 9110 redirect handling checks for metadata fetches.
+      --rfc <mode>         RFC conformance checks (9728, 8414, 3986, 8707, 7636, etc.).
                            Options: off, best-effort, strict
                            Default: best-effort
 
