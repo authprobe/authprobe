@@ -66,7 +66,7 @@ Common flags:
 - `--timeout <sec>`, `--connect-timeout <sec>`, `--retries <n>`
 - `--mcp <mode>` (off, best-effort, strict MCP 2025-11-25 conformance checks)
 - `--verbose` (print request/response headers + bodies during scan)
-- `--explain` (print RFC 9728 rationale for each scan step)
+- `--explain` (print RFC rationale for each scan step)
 - `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)
 - Outputs: `--md`, `--json`, `--sarif`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
 
