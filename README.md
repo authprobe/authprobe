@@ -63,16 +63,18 @@ Diagnose MCP OAuth by running a staged probe.
 
 Common flags:
 - `--help`
-- `--timeout <sec>`
+- `-H`, `--header <k:v>` (add request header, repeatable)
+- `--timeout <sec>` (default: 8)
 - `--mcp <mode>` (off, best-effort, strict MCP 2025-11-25 conformance checks)
 - `--rfc <mode>` (off, best-effort, strict RFC conformance checks)
 - `--allow-private-issuers` (bypass [SSRF protection](docs/ssrf-protection.md) for internal networks)
 - `--insecure` (skip TLS certificate verification; for dev/testing with self-signed certs)
 - `--no-follow-redirects` (stop at first response; useful for debugging redirect chains)
 - `--fail-on <level>` (exit code 2 if findings at/above severity: none, low, medium, high; default: high)
-- `--verbose` (print request/response headers + bodies during scan)
-- `--explain` (print RFC rationale for each scan step)
-- `--tool-list` / `--tool-detail <name>` (print MCP tool metadata)
+- `-v`, `--verbose` (print request/response headers + bodies during scan)
+- `-e`, `--explain` (print RFC rationale for each scan step)
+- `-l`, `--tool-list` (print MCP tool names)
+- `-d`, `--tool-detail <name>` (print a single MCP tool's full JSON definition)
 - Outputs: `--md`, `--json`, `--bundle`, `--output-dir` (use `--json -` for stdout-only JSON)
 
 
