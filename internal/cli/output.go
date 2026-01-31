@@ -47,7 +47,8 @@ func buildSummary(report scanReport) scanSummary {
 	if report.Command != "" {
 		fmt.Fprintf(&out, "%s\n\n", report.Command)
 	}
-	fmt.Fprintf(&out, "Scanning: %s\n", report.Target)
+	fmt.Fprintf(&out, "Scanning:  %s\n", report.Target)
+	fmt.Fprintf(&out, "Scan time: %s\n", formatHumanTime(report.Timestamp))
 	fmt.Fprintln(&out, "Funnel")
 	maxLabel := 0
 	maxStatus := 0
@@ -167,6 +168,15 @@ func wrapText(text string, width int) []string {
 		lines = append(lines, current.String())
 	}
 	return lines
+}
+
+// formatHumanTime converts an RFC3339 timestamp to a human-readable format.
+func formatHumanTime(timestamp string) string {
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return timestamp
+	}
+	return t.Format("Jan 02, 2006 15:04:05 UTC")
 }
 
 // buildScanExplanation generates a human-readable explanation of the scan process.
