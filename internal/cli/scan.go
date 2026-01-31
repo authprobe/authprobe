@@ -57,6 +57,7 @@ import (
 
 type scanConfig struct {
 	Target              string
+	Command             string // Original command for display
 	Headers             []string
 	Timeout             time.Duration
 	Verbose             bool
@@ -74,6 +75,7 @@ type scanConfig struct {
 }
 
 type scanReport struct {
+	Command        string     `json:"command"`
 	Target         string     `json:"target"`
 	MCPMode        string     `json:"mcp_mode"`
 	RFCMode        string     `json:"rfc_mode"`

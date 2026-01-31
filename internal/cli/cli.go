@@ -112,6 +112,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 
 	config := scanConfig{
 		Target:              fs.Arg(0),
+		Command:             "authprobe scan " + strings.Join(args, " "),
 		Headers:             headers,
 		Timeout:             time.Duration(*timeout) * time.Second,
 		Verbose:             *verbose,

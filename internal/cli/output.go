@@ -44,6 +44,9 @@ import (
 // buildSummary constructs a scanSummary with stdout, markdown, and JSON representations.
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
+	if report.Command != "" {
+		fmt.Fprintf(&out, "%s\n\n", report.Command)
+	}
 	fmt.Fprintf(&out, "Scanning: %s\n", report.Target)
 	fmt.Fprintln(&out, "Funnel")
 	maxLabel := 0
@@ -227,6 +230,9 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 func renderMarkdown(report scanReport) string {
 	var md strings.Builder
 	fmt.Fprintf(&md, "# AuthProbe report\n\n")
+	if report.Command != "" {
+		fmt.Fprintf(&md, "```\n%s\n```\n\n", report.Command)
+	}
 	fmt.Fprintf(&md, "Scanning: %s\n\n", report.Target)
 	fmt.Fprintf(&md, "- Target: %s\n", report.Target)
 	fmt.Fprintf(&md, "- MCP: %s\n", report.MCPMode)

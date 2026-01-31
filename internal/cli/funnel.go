@@ -250,6 +250,7 @@ func (f *funnel) run() error {
 // buildReport constructs the final scan report.
 func (f *funnel) buildReport() scanReport {
 	return scanReport{
+		Command:        f.config.Command,
 		Target:         f.config.Target,
 		MCPMode:        f.config.MCPMode,
 		RFCMode:        f.config.RFCMode,
