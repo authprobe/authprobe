@@ -1156,11 +1156,41 @@ func postJSONRPCBytes(client *http.Client, config scanConfig, target string, bod
 
 	var parsed jsonRPCResponse
 	if len(respBody) > 0 {
+		// Try parsing as plain JSON first
 		if err := json.Unmarshal(respBody, &parsed); err == nil {
 			return resp, respBody, &parsed, nil
 		}
+		// If Content-Type is text/event-stream, try parsing as SSE
+		contentType := resp.Header.Get("Content-Type")
+		if strings.HasPrefix(contentType, "text/event-stream") {
+			if jsonData := extractSSEData(respBody); jsonData != nil {
+				if err := json.Unmarshal(jsonData, &parsed); err == nil {
+					return resp, respBody, &parsed, nil
+				}
+			}
+		}
 	}
 	return resp, respBody, nil, nil
+}
+
+// extractSSEData extracts JSON data from an SSE-formatted response.
+// SSE format: "event: <type>\ndata: <json>\n\n"
+// Multiple data lines are concatenated.
+func extractSSEData(body []byte) []byte {
+	lines := strings.Split(string(body), "\n")
+	var dataLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "data: ") {
+			dataLines = append(dataLines, strings.TrimPrefix(line, "data: "))
+		} else if strings.HasPrefix(line, "data:") {
+			dataLines = append(dataLines, strings.TrimPrefix(line, "data:"))
+		}
+	}
+	if len(dataLines) == 0 {
+		return nil
+	}
+	// Concatenate all data lines (SSE spec says multi-line data is joined with newlines)
+	return []byte(strings.Join(dataLines, "\n"))
 }
 
 // extractToolNames extracts tool names from a JSON-RPC tools/list result.

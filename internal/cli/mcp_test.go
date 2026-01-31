@@ -842,3 +842,52 @@ func TestProbeMCP_MCPModeOff(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractSSEData(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple SSE with data prefix",
+			input:    "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1}\n\n",
+			expected: `{"jsonrpc":"2.0","id":1}`,
+		},
+		{
+			name:     "data without space after colon",
+			input:    "event: message\ndata:{\"jsonrpc\":\"2.0\"}\n\n",
+			expected: `{"jsonrpc":"2.0"}`,
+		},
+		{
+			name:     "multiple data lines",
+			input:    "data: {\"part1\":\ndata: \"value\"}\n\n",
+			expected: "{\"part1\":\n\"value\"}",
+		},
+		{
+			name:     "no data lines",
+			input:    "event: ping\n\n",
+			expected: "",
+		},
+		{
+			name:     "real-world SSE response",
+			input:    "event: message\ndata: {\"result\":{\"protocolVersion\":\"2025-06-18\"},\"id\":1,\"jsonrpc\":\"2.0\"}\n\n",
+			expected: `{"result":{"protocolVersion":"2025-06-18"},"id":1,"jsonrpc":"2.0"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractSSEData([]byte(tt.input))
+			if tt.expected == "" {
+				if result != nil {
+					t.Errorf("expected nil, got %q", string(result))
+				}
+				return
+			}
+			if string(result) != tt.expected {
+				t.Errorf("extractSSEData() = %q, want %q", string(result), tt.expected)
+			}
+		})
+	}
+}
