@@ -45,30 +45,33 @@ authprobe scan https://mcp.example.com/mcp
 ```text
 Command:   authprobe scan https://compute.googleapis.com/mcp
 Scanning:  https://compute.googleapis.com/mcp
-Scan time: Jan 31, 2026 21:17:09 UTC
+Scan time: Feb 02, 2026 05:48:18 UTC
 
 Funnel
-  [1] MCP probe (401 + WWW-Authenticate)     [+] PASS
-        probe returned 405; continuing discovery
+  [1] MCP probe (401 + WWW-Authenticate)      [-] SKIP
+        probe returned 405; checking PRM for OAuth config
 
-  [2] MCP initialize + tools/list            [+] PASS
+  [2] MCP initialize + tools/list             [+] PASS
         initialize -> 200
         notifications/initialized -> 202
         tools/list -> 200 (tools: create_instance, delete_instance,
         start_instance, stop_instance, +25 more)
 
-  [3] PRM fetch matrix                       [+] PASS
+  [3] PRM fetch matrix                        [+] PASS
         https://compute.googleapis.com/.well-known/oauth-protected-resource ->
         404
         https://compute.googleapis.com/.well-known/oauth-protected-resource/mcp
         -> 200
 
-  [4] Auth server metadata                   [X] FAIL
+  [4] Auth server metadata                    [X] FAIL
         https://accounts.google.com/.well-known/oauth-authorization-server ->
         200
 
-  [5] Token endpoint readiness (heuristics)  [-] SKIP
+  [5] Token endpoint readiness (heuristics)   [-] SKIP
         no token_endpoint in metadata
+
+  [6] Dynamic client registration (RFC 7591)  [-] SKIP
+        no registration_endpoint in metadata
 
 Primary finding (HIGH): AUTH_SERVER_ISSUER_MISMATCH (confidence 1.00)
   Evidence:
