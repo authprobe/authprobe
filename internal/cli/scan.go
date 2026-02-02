@@ -8,39 +8,39 @@ package cli
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ Main Scan Steps                     │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ probeMCP                            │ Step 1: Probe MCP endpoint for 401 + WWW-Authenticate     │
-// │ fetchPRMMatrix                      │ Step 3: Fetch Protected Resource Metadata (RFC 9728)      │
-// │ fetchAuthServerMetadata             │ Step 4: Fetch authorization server metadata (RFC 8414)    │
-// │ probeTokenEndpointReadiness         │ Step 5: Probe token endpoint for readiness heuristics     │
+// │ probeMCP                            │ Step 1: Probe MCP endpoint for 401 + WWW-Authenticate      │
+// │ fetchPRMMatrix                      │ Step 3: Fetch Protected Resource Metadata (RFC 9728)       │
+// │ fetchAuthServerMetadata             │ Step 4: Fetch authorization server metadata (RFC 8414)     │
+// │ probeTokenEndpointReadiness         │ Step 5: Probe token endpoint for readiness heuristics      │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ MCP Initialize Flow                 │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ mcpInitializeAndListTools           │ Step 2: MCP initialize + tools/list JSON-RPC flow         │
-// │ parseInitializeResult               │ Parse and validate MCP initialize response                │
-// │ sendInitializedNotification         │ Send notifications/initialized per MCP spec               │
-// │ fetchMCPTools                       │ Perform MCP initialize + tools/list to get tool list      │
+// │ mcpInitializeAndListTools           │ Step 2: MCP initialize + tools/list JSON-RPC flow          │
+// │ parseInitializeResult               │ Parse and validate MCP initialize response                 │
+// │ sendInitializedNotification         │ Send notifications/initialized per MCP spec                │
+// │ fetchMCPTools                       │ Perform MCP initialize + tools/list to get tool list       │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ MCP Conformance Checks              │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ checkInitializeOrdering             │ Verify server enforces initialize-before-other-methods    │
-// │ checkJSONRPCNullID                  │ Verify server rejects null request IDs                    │
-// │ checkJSONRPCNotificationWithID      │ Verify server rejects notifications with IDs              │
-// │ checkOriginValidation               │ Verify server validates Origin header for CSRF            │
-// │ checkProtocolVersionHeader          │ Verify server validates MCP-Protocol-Version header       │
-// │ checkSessionHeader                  │ Verify server validates MCP-Session-Id header             │
-// │ checkPing                           │ Verify server correctly implements ping method            │
-// │ checkToolSchemas                    │ Validate tool inputSchema definitions                     │
-// │ checkToolIcons                      │ Validate tool icon URI schemes                            │
-// │ checkTasksSupport                   │ Verify tasks methods when capability advertised           │
+// │ checkInitializeOrdering             │ Verify server enforces initialize-before-other-methods     │
+// │ checkJSONRPCNullID                  │ Verify server rejects null request IDs                     │
+// │ checkJSONRPCNotificationWithID      │ Verify server rejects notifications with IDs               │
+// │ checkOriginValidation               │ Verify server validates Origin header for CSRF             │
+// │ checkProtocolVersionHeader          │ Verify server validates MCP-Protocol-Version header        │
+// │ checkSessionHeader                  │ Verify server validates MCP-Session-Id header              │
+// │ checkPing                           │ Verify server correctly implements ping method             │
+// │ checkToolSchemas                    │ Validate tool inputSchema definitions                      │
+// │ checkToolIcons                      │ Validate tool icon URI schemes                             │
+// │ checkTasksSupport                   │ Verify tasks methods when capability advertised            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ JSON-RPC Helpers                    │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ postJSONRPC                         │ Send JSON-RPC request and parse response                  │
-// │ postJSONRPCBytes                    │ Send raw JSON-RPC bytes with optional mutation            │
-// │ formatJSONRPCError                  │ Format JSON-RPC error for display                         │
-// │ extractToolNames                    │ Extract tool names from tools/list result                 │
-// │ validateJSONRPCResponse             │ Validate JSON-RPC response for conformance                │
-// │ jsonRPCIDEqual                      │ Compare two JSON-RPC IDs for equality                     │
+// │ postJSONRPC                         │ Send JSON-RPC request and parse response                   │
+// │ postJSONRPCBytes                    │ Send raw JSON-RPC bytes with optional mutation             │
+// │ formatJSONRPCError                  │ Format JSON-RPC error for display                          │
+// │ extractToolNames                    │ Extract tool names from tools/list result                  │
+// │ validateJSONRPCResponse             │ Validate JSON-RPC response for conformance                 │
+// │ jsonRPCIDEqual                      │ Compare two JSON-RPC IDs for equality                      │
 // └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 
 import (
