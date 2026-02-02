@@ -722,3 +722,19 @@ Downstream tooling can gate execution on **Fail** results.
 - SSRF hardening: **no** fetches to internal/special-purpose ranges; **no** redirect-based bypasses.
 - High compatibility: major providers (Google, Microsoft, Okta, etc.) validate without host-coincidence false positives (**Warn-only**).
 
+---
+
+## Roadmap
+
+### Phase 1: DCR Authentication Support
+
+| ID   | Feature                       | Description                                                                              | Status  |
+|------|-------------------------------|------------------------------------------------------------------------------------------|---------|
+| R-01 | DCR with initial access token | Add `--dcr-token` flag to authenticate DCR requests. AuthProbe sends `Authorization:     | Planned |
+|      |                               | Bearer <token>` to the registration endpoint when provided, enabling testing of          |         |
+|      |                               | protected DCR endpoints. Also support `AUTHPROBE_DCR_TOKEN` environment variable for     |         |
+|      |                               | CI/CD.                                                                                   |         |
+| R-02 | Client Credentials Flow       | Add `--client-id` and `--client-secret` flags to obtain access tokens via OAuth 2.0      | Planned |
+|      |                               | Client Credentials grant (RFC 6749 Section 4.4). No user interaction required.           |         |
+|      |                               | AuthProbe POSTs to token endpoint with `grant_type=client_credentials` and uses the      |         |
+|      |                               | returned token for authenticated MCP calls. Ideal for CI/CD and service accounts.        |         |
