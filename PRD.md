@@ -738,3 +738,14 @@ Downstream tooling can gate execution on **Fail** results.
 |      |                               | Client Credentials grant (RFC 6749 Section 4.4). No user interaction required.           |         |
 |      |                               | AuthProbe POSTs to token endpoint with `grant_type=client_credentials` and uses the      |         |
 |      |                               | returned token for authenticated MCP calls. Ideal for CI/CD and service accounts.        |         |
+| R-03 | DCR grant_types validation    | Detect servers that incorrectly reject valid DCR requests due to overly strict           | Planned |
+|      |                               | grant_types validation. RFC 7591 allows clients to register with only                    |         |
+|      |                               | `authorization_code`; requiring `refresh_token` is non-compliant.<br><br>                |         |
+|      |                               | **Symptom:** Client registration fails with "invalid grant_types" even though            |         |
+|      |                               | the request is RFC-compliant.<br><br>                                                    |         |
+|      |                               | **Test case:**<br>                                                                       |         |
+|      |                               | `POST /register` with `{"grant_types": ["authorization_code"]}`<br>                      |         |
+|      |                               | Expected: 201 Created<br>                                                                |         |
+|      |                               | Failure: 400 because `refresh_token` not included<br><br>                                |         |
+|      |                               | **Finding:** `DCR_GRANT_TYPES_OVERLY_STRICT` (MEDIUM) - server rejects valid             |         |
+|      |                               | authorization_code-only registration, blocking zero-touch MCP client onboarding.         |         |
