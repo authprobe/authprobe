@@ -353,7 +353,8 @@ type prmCandidate struct {
 }
 
 type authServerMetadataResult struct {
-	TokenEndpoints []string
+	TokenEndpoints        []string
+	RegistrationEndpoints []string
 }
 
 // fetchAuthServerMetadata retrieves authorization server metadata per RFC 8414.
@@ -443,6 +444,8 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing token_endpoint", issuer)))
 			continue
 		}
+		// RFC 7591 Section 3: "registration_endpoint" is OPTIONAL - used for Dynamic Client Registration
+		registrationEndpoint, _ := obj["registration_endpoint"].(string)
 		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(authorizationEndpoint, "authorization_endpoint", config, false); len(urlFindings) > 0 {
 				findings = append(findings, urlFindings...)
@@ -507,6 +510,9 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 			}
 		}
 		result.TokenEndpoints = append(result.TokenEndpoints, tokenEndpoint)
+		if registrationEndpoint != "" {
+			result.RegistrationEndpoints = append(result.RegistrationEndpoints, registrationEndpoint)
+		}
 	}
 	return findings, strings.TrimSpace(evidence.String()), result
 }
@@ -984,6 +990,134 @@ func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEn
 		}
 	}
 	return findings, strings.TrimSpace(evidence.String())
+}
+
+// probeDCREndpoints probes Dynamic Client Registration endpoints (RFC 7591).
+// Tests for: open registration, input validation, and security posture.
+func probeDCREndpoints(client *http.Client, config scanConfig, registrationEndpoints []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
+	findings := []finding{}
+	var evidence strings.Builder
+	for _, endpoint := range registrationEndpoints {
+		if endpoint == "" {
+			continue
+		}
+		// Test 1: Probe with empty request to check if endpoint is protected
+		emptyResp, _, err := postDCRProbe(client, config, endpoint, map[string]any{}, trace, stdout, "Step 6: Dynamic client registration (empty probe)")
+		if err != nil {
+			fmt.Fprintf(&evidence, "%s -> error: %v\n", endpoint, err)
+			continue
+		}
+		fmt.Fprintf(&evidence, "%s -> %d", endpoint, emptyResp.StatusCode)
+
+		switch emptyResp.StatusCode {
+		case http.StatusCreated, http.StatusOK:
+			// Endpoint is open - this is a security concern
+			findings = append(findings, newFinding("DCR_ENDPOINT_OPEN", fmt.Sprintf("%s accepts unauthenticated registration", endpoint)))
+			fmt.Fprint(&evidence, " (OPEN - no auth required)")
+
+			// Test 2: Check input validation with suspicious redirect_uris
+			findings = append(findings, testDCRInputValidation(client, config, endpoint, trace, stdout)...)
+		case http.StatusUnauthorized, http.StatusForbidden:
+			// Endpoint is protected - expected for secure DCR
+			fmt.Fprint(&evidence, " (protected)")
+		case http.StatusBadRequest:
+			// Endpoint requires valid input - likely protected or validates input
+			fmt.Fprint(&evidence, " (validates input)")
+		default:
+			fmt.Fprintf(&evidence, " (unexpected status)")
+		}
+		fmt.Fprintln(&evidence)
+	}
+	return findings, strings.TrimSpace(evidence.String())
+}
+
+// testDCRInputValidation tests DCR endpoint input validation with suspicious values.
+func testDCRInputValidation(client *http.Client, config scanConfig, endpoint string, trace *[]traceEntry, stdout io.Writer) []finding {
+	findings := []finding{}
+
+	// Test: HTTP redirect URI (should be rejected per RFC 6749 Section 3.1.2.1)
+	httpPayload := map[string]any{
+		"redirect_uris": []string{"http://evil.example.com/callback"},
+		"client_name":   "authprobe-test-http",
+	}
+	httpResp, _, err := postDCRProbe(client, config, endpoint, httpPayload, trace, stdout, "Step 6: Dynamic client registration (http redirect test)")
+	if err == nil && (httpResp.StatusCode == http.StatusCreated || httpResp.StatusCode == http.StatusOK) {
+		findings = append(findings, newFinding("DCR_HTTP_REDIRECT_ACCEPTED", "registration accepted http:// redirect URI"))
+	}
+
+	// Test: localhost redirect URI (common in dev, risky in prod)
+	localhostPayload := map[string]any{
+		"redirect_uris": []string{"http://localhost:8080/callback"},
+		"client_name":   "authprobe-test-localhost",
+	}
+	localhostResp, _, err := postDCRProbe(client, config, endpoint, localhostPayload, trace, stdout, "Step 6: Dynamic client registration (localhost test)")
+	if err == nil && (localhostResp.StatusCode == http.StatusCreated || localhostResp.StatusCode == http.StatusOK) {
+		findings = append(findings, newFinding("DCR_LOCALHOST_REDIRECT_ACCEPTED", "registration accepted localhost redirect URI"))
+	}
+
+	// Test: Dangerous URI schemes (file://, javascript:)
+	dangerousPayload := map[string]any{
+		"redirect_uris": []string{"javascript:alert(1)"},
+		"client_name":   "authprobe-test-dangerous",
+	}
+	dangerousResp, _, err := postDCRProbe(client, config, endpoint, dangerousPayload, trace, stdout, "Step 6: Dynamic client registration (dangerous URI test)")
+	if err == nil && (dangerousResp.StatusCode == http.StatusCreated || dangerousResp.StatusCode == http.StatusOK) {
+		findings = append(findings, newFinding("DCR_DANGEROUS_URI_ACCEPTED", "registration accepted javascript: or file: URI scheme"))
+	}
+
+	// Test: Empty redirect_uris array (should be rejected)
+	emptyRedirectPayload := map[string]any{
+		"redirect_uris": []string{},
+		"client_name":   "authprobe-test-empty-redirects",
+	}
+	emptyRedirectResp, _, err := postDCRProbe(client, config, endpoint, emptyRedirectPayload, trace, stdout, "Step 6: Dynamic client registration (empty redirects test)")
+	if err == nil && (emptyRedirectResp.StatusCode == http.StatusCreated || emptyRedirectResp.StatusCode == http.StatusOK) {
+		findings = append(findings, newFinding("DCR_EMPTY_REDIRECT_URIS_ACCEPTED", "registration accepted empty redirect_uris array"))
+	}
+
+	return findings
+}
+
+// postDCRProbe sends a POST request to a DCR endpoint with JSON payload.
+func postDCRProbe(client *http.Client, config scanConfig, endpoint string, payload map[string]any, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	if config.Verbose {
+		writeVerboseHeading(stdout, verboseLabel)
+		if err := writeVerboseRequest(stdout, req); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp, nil, err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	if config.Verbose {
+		if err := writeVerboseResponse(stdout, resp); err != nil {
+			return resp, respBody, err
+		}
+	}
+	addTrace(trace, req, resp)
+
+	return resp, respBody, nil
 }
 
 // mcpProtocolVersion is the MCP protocol version supported by authprobe.

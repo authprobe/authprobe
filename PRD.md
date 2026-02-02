@@ -100,7 +100,15 @@ AuthProbe runs a staged funnel with deterministic step IDs. Each step emits PASS
   - detect “HTTP 200 but error payload” patterns
 - This step outputs risk findings rather than claiming full end-to-end validity.
 
-**(Optional Step 5: Authenticated MCP call)**
+**Step 5: Dynamic Client Registration (RFC 7591)**
+- If `registration_endpoint` is present in authorization server metadata:
+  - Probe endpoint accessibility (protected vs open)
+  - Test input validation with suspicious redirect URIs
+  - Check for dangerous URI scheme acceptance (http://, javascript:, file://)
+  - Verify empty redirect_uris array rejection
+- Findings indicate security posture of DCR configuration.
+
+**(Optional Step 6: Authenticated MCP call)**
 - Only if user provides a bearer token via `--bearer-token` (optional, may be deferred if not needed for v0.1):
   - Make one MCP call with `Authorization: Bearer <token>` and classify 401 results.
 
@@ -319,6 +327,23 @@ Icon URI uses unsafe/unsupported scheme (e.g., `javascript:`, `file:`).
 42) `SSE_LAST_EVENT_ID_RESUME_VIOLATION`  
 Server violates resumption semantics with `Last-Event-ID` (replay/broadcast mismatch).
 
+### Dynamic Client Registration (RFC 7591)
+
+43) `DCR_ENDPOINT_OPEN`  
+Registration endpoint accepts unauthenticated requests; should require initial access token.
+
+44) `DCR_HTTP_REDIRECT_ACCEPTED`  
+Registration endpoint accepts http:// (non-TLS) redirect URIs in production.
+
+45) `DCR_LOCALHOST_REDIRECT_ACCEPTED`  
+Registration endpoint accepts localhost redirect URIs (risky in production).
+
+46) `DCR_DANGEROUS_URI_ACCEPTED`  
+Registration endpoint accepts dangerous URI schemes (javascript:, file:).
+
+47) `DCR_EMPTY_REDIRECT_URIS_ACCEPTED`  
+Registration endpoint accepts empty redirect_uris array.
+
 ---
 
 ## 7.1) Severity and confidence rules (v0.1)
@@ -388,6 +413,17 @@ AuthProbe findings must be consistent and CI-friendly. Each finding includes:
 - `SESSION_ID_REQUIRED_BUT_NOT_ENFORCED`
 - `ICON_URI_UNSAFE_SCHEME`
 - `SSE_LAST_EVENT_ID_RESUME_VIOLATION`
+
+### RFC 7591 Dynamic Client Registration severity mapping
+
+**HIGH**
+- `DCR_ENDPOINT_OPEN`
+- `DCR_HTTP_REDIRECT_ACCEPTED`
+- `DCR_DANGEROUS_URI_ACCEPTED`
+
+**MEDIUM**
+- `DCR_LOCALHOST_REDIRECT_ACCEPTED`
+- `DCR_EMPTY_REDIRECT_URIS_ACCEPTED`
 
 ---
 

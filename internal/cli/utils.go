@@ -700,6 +700,16 @@ func findingRFCExplanation(code string) string {
 		return "Metadata fetch redirected to a disallowed location and was blocked by policy."
 	case "METADATA_REDIRECT_LIMIT":
 		return "Metadata fetch exceeded the redirect limit before reaching the issuer metadata."
+	case "DCR_ENDPOINT_OPEN":
+		return "RFC 7591 recommends protecting the registration endpoint with an initial access token to prevent unauthorized client registration."
+	case "DCR_HTTP_REDIRECT_ACCEPTED":
+		return "RFC 6749 Section 3.1.2.1 recommends HTTPS for redirect URIs in production to protect authorization codes and tokens."
+	case "DCR_LOCALHOST_REDIRECT_ACCEPTED":
+		return "Localhost redirect URIs are common in development but may indicate insufficient validation in production."
+	case "DCR_DANGEROUS_URI_ACCEPTED":
+		return "Registration endpoints should reject dangerous URI schemes like javascript: or file: to prevent security vulnerabilities."
+	case "DCR_EMPTY_REDIRECT_URIS_ACCEPTED":
+		return "RFC 7591 requires redirect_uris for web application clients; empty arrays may indicate missing validation."
 	default:
 		return ""
 	}
@@ -744,7 +754,10 @@ func findingSeverity(code string) string {
 		"MCP_TOOLS_LIST_INVALID",
 		"MCP_TASKS_METHOD_MISSING",
 		"MCP_TOOL_INPUT_SCHEMA_MISSING",
-		"MCP_TOOL_INPUT_SCHEMA_INVALID":
+		"MCP_TOOL_INPUT_SCHEMA_INVALID",
+		"DCR_ENDPOINT_OPEN",
+		"DCR_HTTP_REDIRECT_ACCEPTED",
+		"DCR_DANGEROUS_URI_ACCEPTED":
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
 		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
@@ -756,7 +769,9 @@ func findingSeverity(code string) string {
 		"MCP_PROTOCOL_VERSION_REJECTION_MISSING",
 		"MCP_SESSION_ID_REJECTION_MISSING",
 		"MCP_PING_INVALID_RESPONSE",
-		"MCP_CAPABILITIES_INVALID":
+		"MCP_CAPABILITIES_INVALID",
+		"DCR_LOCALHOST_REDIRECT_ACCEPTED",
+		"DCR_EMPTY_REDIRECT_URIS_ACCEPTED":
 		return "medium"
 	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH",
 		"AUTH_SERVER_PKCE_S256_MISSING",

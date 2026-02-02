@@ -10,21 +10,21 @@
 MCP + OAuth breaks for mundane reasons—missing headers, wrong content types, malformed metadata. `authprobe scan <mcp_url>` walks the discovery flow and reports exactly where it diverges from spec.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            AuthProbe Scan Funnel                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  [1] Discovery ──► [2] MCP Init ──► [3] PRM ──► [4] Auth Server ──► [5] Token
-│        │                │              │              │                │    │
-│        ▼                ▼              ▼              ▼                ▼    │
-│     401 + WWW-     initialize +    Fetch PRM     Fetch issuer       POST    │
-│     Authenticate   tools/list      metadata      metadata          probe    │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                               AuthProbe Scan Funnel                                  │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  [1] Discovery ──► [2] MCP Init ──► [3] PRM ──► [4] Auth Server ──► [5] Token ──► [6] DCR
+│        │                │              │              │                │           │ │
+│        ▼                ▼              ▼              ▼                ▼           ▼ │
+│     401 + WWW-     initialize +    Fetch PRM     Fetch issuer       POST        DCR  │
+│     Authenticate   tools/list      metadata      metadata          probe       probe │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 See [docs/funnel.md](docs/funnel.md) for the full breakdown of what gets checked and why.
 
-Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636), [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), [RFC 9110](https://datatracker.ietf.org/doc/html/rfc9110).
+Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636), [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591), [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), [RFC 9110](https://datatracker.ietf.org/doc/html/rfc9110).
 
 ---
 

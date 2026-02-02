@@ -19,6 +19,7 @@ package cli
 // │ (f) skipIfAuthNotRequired           │ Skip if auth not required (no 401)                         │
 // │ (f) skipIfNoAuthServers             │ Skip if no authorization servers found                     │
 // │ (f) skipIfNoTokenEndpoints          │ Skip if no token endpoints found                           │
+// │ (f) skipIfNoRegistrationEndpoints   │ Skip if no registration endpoints found                    │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ Step Execution                      │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
@@ -27,6 +28,7 @@ package cli
 // │ (f) runPRMFetch                     │ Step 3: Fetch Protected Resource Metadata                  │
 // │ (f) runAuthServerMetadata           │ Step 4: Fetch authorization server metadata                │
 // │ (f) runTokenEndpoint                │ Step 5: Probe token endpoint readiness                     │
+// │ (f) runDCRProbe                     │ Step 6: Probe DCR endpoint (RFC 7591)                      │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ Result Building                     │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
@@ -132,6 +134,13 @@ func (f *funnel) getSteps() []stepDef {
 			Skip: (*funnel).skipIfNoTokenEndpoints,
 			Run:  (*funnel).runTokenEndpoint,
 		},
+		{
+			ID:   6,
+			Name: "Dynamic client registration (RFC 7591)",
+			Desc: "Probe DCR endpoint for security posture and input validation",
+			Skip: (*funnel).skipIfNoRegistrationEndpoints,
+			Run:  (*funnel).runDCRProbe,
+		},
 	}
 }
 
@@ -167,6 +176,16 @@ func (f *funnel) skipIfNoTokenEndpoints() (bool, string) {
 	}
 	if len(f.authMetadata.TokenEndpoints) == 0 {
 		return true, "no token_endpoint in metadata"
+	}
+	return false, ""
+}
+
+func (f *funnel) skipIfNoRegistrationEndpoints() (bool, string) {
+	if !f.authRequired {
+		return true, "auth not required"
+	}
+	if len(f.authMetadata.RegistrationEndpoints) == 0 {
+		return true, "no registration_endpoint in metadata"
 	}
 	return false, ""
 }
@@ -214,6 +233,13 @@ func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
 // runTokenEndpoint probes token endpoints with empty POST.
 func (f *funnel) runTokenEndpoint() (string, string, []finding, error) {
 	findings, evidence := probeTokenEndpointReadiness(f.client, f.config, f.authMetadata.TokenEndpoints, &f.trace, f.verboseOutput)
+	status := statusFromFindings(findings, true)
+	return status, evidence, findings, nil
+}
+
+// runDCRProbe probes Dynamic Client Registration endpoints (RFC 7591).
+func (f *funnel) runDCRProbe() (string, string, []finding, error) {
+	findings, evidence := probeDCREndpoints(f.client, f.config, f.authMetadata.RegistrationEndpoints, &f.trace, f.verboseOutput)
 	status := statusFromFindings(findings, true)
 	return status, evidence, findings, nil
 }
