@@ -173,9 +173,9 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		// 405 Method Not Allowed means the server doesn't support GET/SSE, but doesn't indicate auth is required.
-		// Only a 401 response with WWW-Authenticate indicates OAuth discovery is needed.
+		// We'll check PRM to determine if OAuth is configured.
 		if resp.StatusCode == http.StatusMethodNotAllowed {
-			return "", resolvedTarget(resp, config.Target), findings, fmt.Sprintf("probe returned %d; auth not required", resp.StatusCode), false, nil
+			return "", resolvedTarget(resp, config.Target), findings, fmt.Sprintf("probe returned %d; checking PRM for OAuth config", resp.StatusCode), false, nil
 		}
 		return "", resolvedTarget(resp, config.Target), findings, "auth not required", false, nil
 	}
@@ -194,7 +194,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 }
 
 // fetchPRMMatrix retrieves protected resource metadata across discovery candidates.
-func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer) (prmResult, []finding, string, error) {
+func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer, authRequiredFromProbe bool) (prmResult, []finding, string, error) {
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
 		return prmResult{}, nil, "", err
@@ -244,10 +244,12 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		status := resp.StatusCode
 		fmt.Fprintf(&evidence, "%s -> %d\n", candidate.URL, status)
 		// RFC 9728 Section 4: The PRM document MUST be available at the well-known endpoint
-		if status == http.StatusNotFound && candidate.Source == "root" && !hasPathSuffix {
+		// Only flag 404 as a failure if auth was required from Step 1 (401 response)
+		// If Step 1 returned 405, 404 from PRM just means no OAuth is configured
+		if status == http.StatusNotFound && candidate.Source == "root" && !hasPathSuffix && authRequiredFromProbe {
 			findings = append(findings, newFinding("DISCOVERY_ROOT_WELLKNOWN_404", "root PRM endpoint returned 404"))
 		}
-		if status != http.StatusOK && reportFindings {
+		if status != http.StatusOK && reportFindings && authRequiredFromProbe {
 			findings = append(findings, newFinding("PRM_HTTP_STATUS_NOT_200", fmt.Sprintf("%s status %d", candidate.Source, status)))
 			continue
 		}

@@ -691,7 +691,7 @@ func TestProbeMCP_405MethodNotAllowed(t *testing.T) {
 		t.Error("expected authRequired=false for 405 (auth not required)")
 	}
 
-	expectedSummary := "probe returned 405; auth not required"
+	expectedSummary := "probe returned 405; checking PRM for OAuth config"
 	if summary != expectedSummary {
 		t.Errorf("summary: got %q, want %q", summary, expectedSummary)
 	}

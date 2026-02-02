@@ -117,7 +117,7 @@ func (f *funnel) getSteps() []stepDef {
 			ID:   3,
 			Name: "PRM fetch matrix",
 			Desc: "Fetch OAuth Protected Resource Metadata (RFC 9728) from .well-known endpoints",
-			Skip: (*funnel).skipIfAuthNotRequired,
+			Skip: nil, // Always runs - PRM result determines if auth is configured
 			Run:  (*funnel).runPRMFetch,
 		},
 		{
@@ -212,12 +212,29 @@ func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
 }
 
 // runPRMFetch fetches OAuth Protected Resource Metadata (RFC 9728).
+// If valid PRM is found (has authorization_servers), sets authRequired = true.
+// This allows OAuth discovery to continue even if Step 1 returned 405.
 func (f *funnel) runPRMFetch() (string, string, []finding, error) {
-	result, findings, evidence, err := fetchPRMMatrix(f.client, f.config, f.resourceMetadata, f.resolvedTarget, &f.trace, f.verboseOutput)
+	result, findings, evidence, err := fetchPRMMatrix(f.client, f.config, f.resourceMetadata, f.resolvedTarget, &f.trace, f.verboseOutput, f.authRequired)
 	if err != nil {
 		return "", "", nil, err
 	}
 	f.prmResult = result
+
+	// If valid PRM found (has authorization_servers), OAuth is configured
+	if len(result.AuthorizationServers) > 0 {
+		f.authRequired = true
+		status := statusFromFindings(findings, true)
+		return status, evidence, findings, nil
+	}
+
+	// No valid PRM found - if we came from 405, this is expected (no OAuth configured)
+	// Don't treat as failure, just note no OAuth is configured
+	if !f.authRequired {
+		return "PASS", evidence + "\nno OAuth configuration found", nil, nil
+	}
+
+	// Auth was required (401) but no valid PRM - this is a real failure
 	status := statusFromFindings(findings, true)
 	return status, evidence, findings, nil
 }
