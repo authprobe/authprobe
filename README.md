@@ -1,13 +1,14 @@
 # `authprobe` — MCP OAuth Diagnostics
 
-[![Build Status](https://github.com/authprobe/authprobe/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/authprobe/authprobe/actions/workflows/go.yml)
-[![License](https://img.shields.io/github/license/authprobe/authprobe)](https://github.com/authprobe/authprobe/blob/main/LICENSE)
+[![CI Build](https://github.com/authprobe/authprobe/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/authprobe/authprobe/actions/workflows/go.yml)
 [![Security Status](https://snyk.io/test/github/authprobe/authprobe/badge.svg)](https://snyk.io/test/github/authprobe/authprobe)
+[![Join Discord](https://img.shields.io/badge/Join-Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZYRjaZEsNV)
+[![Open in GitHub Codespaces](https://img.shields.io/badge/Open%20in-GitHub%20Codespaces-2f363d?logo=github&logoColor=white)](https://github.com/codespaces/new?hide_repo_select=true&repo=authprobe/authprobe)
 
 
 `authprobe` pinpoints **MCP OAuth** failures.
 
-MCP + OAuth breaks for mundane reasons—missing headers, wrong content types, malformed metadata. `authprobe scan <mcp_url>` walks the discovery flow and reports exactly where it diverges from spec.
+MCP + OAuth breaks for mundane reasons like missing headers, wrong content types, malformed metadata. `authprobe scan <mcp_url>` walks the discovery flow and reports exactly where it diverges from spec.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
