@@ -295,6 +295,8 @@ func TestScanFlagParsing(t *testing.T) {
 			fs.BoolVar(verbose, "v", false, "")
 			explain := fs.Bool("explain", false, "")
 			fs.BoolVar(explain, "e", false, "")
+			fs.String("openai-api-key", "", "")
+			fs.String("anthropic-api-key", "", "")
 			toolList := fs.Bool("tool-list", false, "")
 			fs.BoolVar(toolList, "l", false, "")
 			toolDetail := fs.String("tool-detail", "", "")

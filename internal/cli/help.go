@@ -52,6 +52,9 @@ DIAGNOSTICS:
   -v, --verbose            Verbose logs (includes request/response headers + bodies).
       --no-redact          Disable redaction in verbose logs and evidence bundles.
   -e, --explain            Print an RFC rationale for each scan step.
+      --openai-api-key     OpenAI API key (or set OPENAI_API_KEY). Enables LLM explanations.
+      --anthropic-api-key  Anthropic API key (or set ANTHROPIC_API_KEY). Enables LLM explanations.
+                           If both are set, OpenAI is used.
   -l, --tool-list          Print MCP tool names with their titles (from tools/list).
   -d, --tool-detail <name> Print a single MCP tool's full JSON definition.
 

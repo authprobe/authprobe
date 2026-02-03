@@ -38,6 +38,7 @@ package cli
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -311,6 +312,17 @@ func (f *funnel) buildScanSummary(report scanReport) scanSummary {
 		explanation := buildScanExplanation(f.config, f.resourceMetadata, f.prmResult, f.authRequired)
 		if explanation != "" {
 			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+		}
+	}
+	if f.config.LLMExplain {
+		explanation, err := buildLLMExplanation(f.config, report)
+		if err != nil {
+			message := fmt.Sprintf("LLM explanation unavailable: %v", err)
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + message + "\n"
+			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## LLM explanation\n\n" + message + "\n"
+		} else if explanation != "" {
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\nLLM explanation\n" + explanation + "\n"
+			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## LLM explanation\n\n" + explanation + "\n"
 		}
 	}
 	summary.Trace = f.trace

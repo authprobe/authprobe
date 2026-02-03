@@ -48,6 +48,8 @@ authprobe scan https://mcp.example.com/mcp
 
 ## What you get
 
+The scan produces a funnel view output and an LLM explaination of spec expectation if an API key for anthropic or openai is provided
+
 ### 1) Funnel view (what broke, where)
 ```text
 Command:   authprobe scan https://compute.googleapis.com/mcp
@@ -85,6 +87,94 @@ Primary finding (HIGH): AUTH_SERVER_ISSUER_MISMATCH (confidence 1.00)
       issuer mismatch: metadata issuer "https://accounts.google.com", expected
       "https://accounts.google.com/"
       RFC 8414 requires the metadata issuer to exactly match the issuer used for discovery.
+
+LLM explanation
+===============
+MCP OAuth Scan Analysis: Google Compute Engine MCP Server
+
+Executive Summary
+-----------------
+Outcome: FAILURE IS VALID AND JUSTIFIED
+
+The scan correctly identified a high-severity specification violation in 
+Google's OAuth authorization server metadata. The issuer mismatch 
+represents a legitimate RFC 8414 compliance failure that could lead to 
+security vulnerabilities in client implementations.
+
+Detailed Analysis
+-----------------
+
+
+Background Context
+------------------
+
+Target Server: https://compute.googleapis.com/mcp
+
+Authorization Server: https://accounts.google.com/
+
+Scan Mode: Best-effort (lenient interpretation of ambiguous requirements)
+
+The server is a Google Compute Engine MCP implementation that successfully 
+implements:
+
+MCP protocol (initialize, tools/list via JSON-RPC 2.0)
+
+Protected Resource Metadata (PRM) discovery (RFC 9728)
+
+OAuth Authorization Server Metadata (RFC 8414): NOT implemented correctly
+
+Failure Breakdown: AUTH_SERVER_ISSUER_MISMATCH
+
+What Happened
+-------------
+
+The scanner discovered the authorization server metadata at:
+https://accounts.google.com/.well-known/oauth-authorization-server
+
+The metadata document contained:
+{
+  "issuer": "https://accounts.google.com
+  ",
+  ...
+}
+
+Why This Is Wrong
+-----------------
+
+RFC 8414 section 3.2 states explicitly:
+The "issuer" value returned MUST be identical to the Issuer URL that was 
+used as the prefix to "/.well-known/" in the URL used to retrieve the 
+metadata, per the construction rule in Section 3.
+
+Construction Rule (RFC 8414 section 3):
+
+Authorization Server Metadata is retrieved from: 
+  [Issuer]/.well-known/oauth-authorization-server
+
+In this case:
+
+Discovery URL used: 
+  https://accounts.google.com/.well-known/oauth-authorization-server
+
+Implied issuer (prefix before /.well-known/): https://accounts.google.com/
+ (with trailing slash)
+Metadata issuer claim: https://accounts.google.com
+ (without trailing slash)
+Result: MISMATCH
+
+Specification References
+------------------------
+
+RFC 8414 section 3.2 (Authorization Server Metadata - Response):
+The "issuer" value returned MUST be identical to the Issuer URL that was 
+used as the prefix to "/.well-known/" in the URL used to retrieve the 
+metadata.
+
+RFC 8414 section 2 (Issuer Identifier):
+The issuer identifier is a URL that uses the "https" scheme and has no 
+query or fragment components. The issuer identifier is case-sensitive 
+and MUST exactly match 
+
 exit status 2
 ```
 

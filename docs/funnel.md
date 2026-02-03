@@ -97,6 +97,7 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 | 3    | PRM Discovery        | Fetch Protected Resource Metadata (root/path-suffix) | `200 OK`, JSON with `resource` + `authorization_servers`                 | [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)        |
 | 4    | Auth Server Metadata | Fetch `/.well-known/oauth-authorization-server`      | `200 OK`, JSON with `issuer`, `authorization_endpoint`, `token_endpoint` | [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636)        |
 | 5    | Token Readiness      | POST invalid grant to token endpoint                 | JSON error response, not `200` with error payload                        | OAuth best practice                                                                                                         |
+| 6    | DCR (Optional)       | POST dynamic client registration                     | `201 Created`, JSON with `client_id`                                     | [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)                                                                   |
 
 ## Failure Codes by Step
 
@@ -156,6 +157,16 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 |------------------------------------|----------------------------------------------------|---------------------|
 | `TOKEN_RESPONSE_NOT_JSON_RISK`     | Token endpoint responds with JSON                  | OAuth best practice |
 | `TOKEN_HTTP200_ERROR_PAYLOAD_RISK` | Token endpoint doesn't return `200` with `error`   | OAuth best practice |
+
+### Step 6: DCR (Optional)
+
+| Code                             | Expectation                                                      | Spec                                                                     |
+|----------------------------------|------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `DCR_ENDPOINT_OPEN`              | Registration endpoint rejects unauthenticated requests           | [RFC 7591 §3](https://datatracker.ietf.org/doc/html/rfc7591#section-3)    |
+| `DCR_HTTP_REDIRECT_ACCEPTED`     | Registration rejects non-HTTPS redirect URIs                     | [RFC 6749 §3.1.2.1](https://datatracker.ietf.org/doc/html/rfc6749#section-3.1.2.1) |
+| `DCR_LOCALHOST_REDIRECT_ACCEPTED`| Registration validates localhost redirect URIs                   | OAuth best practice                                                      |
+| `DCR_DANGEROUS_URI_ACCEPTED`     | Registration rejects dangerous URI schemes (e.g., `javascript:`)  | OAuth best practice                                                      |
+| `DCR_EMPTY_REDIRECT_URIS_ACCEPTED` | Registration requires non-empty redirect URIs                 | [RFC 7591 §2](https://datatracker.ietf.org/doc/html/rfc7591#section-2)    |
 
 ### Redirect & SSRF Safety
 

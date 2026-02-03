@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -99,6 +100,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(toolList, "l", false, "")
 	toolDetail := fs.String("tool-detail", "", "")
 	fs.StringVar(toolDetail, "d", "", "")
+	openAIAPIKey := fs.String("openai-api-key", "", "")
+	anthropicAPIKey := fs.String("anthropic-api-key", "", "")
 
 	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -118,6 +121,8 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Timeout:             time.Duration(*timeout) * time.Second,
 		Verbose:             *verbose,
 		Explain:             *explain,
+		OpenAIAPIKey:        strings.TrimSpace(*openAIAPIKey),
+		AnthropicAPIKey:     strings.TrimSpace(*anthropicAPIKey),
 		FailOn:              fs.Lookup("fail-on").Value.String(),
 		MCPMode:             fs.Lookup("mcp").Value.String(),
 		RFCMode:             fs.Lookup("rfc").Value.String(),
@@ -130,6 +135,13 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		BundlePath:          fs.Lookup("bundle").Value.String(),
 		OutputDir:           fs.Lookup("output-dir").Value.String(),
 	}
+	if config.OpenAIAPIKey == "" {
+		config.OpenAIAPIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if config.AnthropicAPIKey == "" {
+		config.AnthropicAPIKey = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	}
+	config.LLMExplain = config.OpenAIAPIKey != "" || config.AnthropicAPIKey != ""
 
 	if *toolList && *toolDetail != "" {
 		fmt.Fprintln(stderr, "error: --tool-list and --tool-detail cannot be used together")
