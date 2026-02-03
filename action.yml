@@ -1,0 +1,67 @@
+name: AuthProbe
+description: Run AuthProbe scans in CI and upload reports.
+author: AuthProbe
+inputs:
+  version:
+    description: Release version to use (e.g., v0.1.0 or 0.1.0). Use "latest" for newest.
+    default: latest
+  command:
+    description: AuthProbe command to run (currently "scan").
+    default: scan
+  mcp_url:
+    description: MCP URL for scan (required when command=scan).
+    required: false
+  args:
+    description: Additional arguments passed to AuthProbe.
+    default: ""
+  report_md:
+    description: Path for markdown report output. Empty to skip.
+    default: authprobe-report.md
+  report_json:
+    description: Path for JSON report output. Empty to skip.
+    default: authprobe-report.json
+  bundle:
+    description: Path for evidence bundle output. Empty to skip.
+    default: authprobe-evidence.zip
+  upload_artifacts:
+    description: Upload report artifacts to the workflow run.
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Download AuthProbe
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: ${{ github.action_path }}/scripts/action.sh download
+    - name: Run AuthProbe
+      shell: bash
+      env:
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_MCP_URL: ${{ inputs.mcp_url }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_REPORT_MD: ${{ inputs.report_md }}
+        INPUT_REPORT_JSON: ${{ inputs.report_json }}
+        INPUT_BUNDLE: ${{ inputs.bundle }}
+      run: ${{ github.action_path }}/scripts/action.sh run
+    - name: Upload markdown report
+      if: inputs.upload_artifacts == 'true' && inputs.report_md != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: authprobe-report-md
+        path: ${{ inputs.report_md }}
+        if-no-files-found: warn
+    - name: Upload JSON report
+      if: inputs.upload_artifacts == 'true' && inputs.report_json != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: authprobe-report-json
+        path: ${{ inputs.report_json }}
+        if-no-files-found: warn
+    - name: Upload evidence bundle
+      if: inputs.upload_artifacts == 'true' && inputs.bundle != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: authprobe-evidence
+        path: ${{ inputs.bundle }}
+        if-no-files-found: warn

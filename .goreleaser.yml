@@ -1,0 +1,60 @@
+version: 2
+
+project_name: authprobe
+
+builds:
+  - id: authprobe
+    main: ./cmd/authprobe
+    binary: authprobe
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: binary
+    name_template: "authprobe_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+dockers:
+  - id: authprobe-linux-amd64
+    use: buildx
+    dockerfile: Dockerfile
+    ids:
+      - authprobe
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - ghcr.io/authprobe/authprobe:{{ .Version }}-amd64
+      - ghcr.io/authprobe/authprobe:latest-amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+  - id: authprobe-linux-arm64
+    use: buildx
+    dockerfile: Dockerfile
+    ids:
+      - authprobe
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - ghcr.io/authprobe/authprobe:{{ .Version }}-arm64
+      - ghcr.io/authprobe/authprobe:latest-arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+
+docker_manifests:
+  - name_template: ghcr.io/authprobe/authprobe:{{ .Version }}
+    image_templates:
+      - ghcr.io/authprobe/authprobe:{{ .Version }}-amd64
+      - ghcr.io/authprobe/authprobe:{{ .Version }}-arm64
+  - name_template: ghcr.io/authprobe/authprobe:latest
+    image_templates:
+      - ghcr.io/authprobe/authprobe:latest-amd64
+      - ghcr.io/authprobe/authprobe:latest-arm64

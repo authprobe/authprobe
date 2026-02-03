@@ -1,0 +1,24 @@
+version: 2
+
+project_name: authprobe
+
+builds:
+  - id: authprobe
+    main: ./cmd/authprobe
+    binary: authprobe
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: binary
+    name_template: "authprobe_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"

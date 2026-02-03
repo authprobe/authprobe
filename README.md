@@ -33,6 +33,12 @@ Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728]
 ### Install (binary)
 Download the latest release binary from GitHub Releases and put it on your PATH.
 
+### Install (Docker)
+```bash
+docker pull ghcr.io/authprobe/authprobe:latest
+docker run --rm ghcr.io/authprobe/authprobe:latest scan https://mcp.example.com/mcp
+```
+
 ### Run a scan
 ```bash
 authprobe scan https://mcp.example.com/mcp
@@ -138,6 +144,21 @@ Typical pattern:
 - run `authprobe scan` against staging on PR
 - fail the build if severity ≥ `high`
 - upload `report.md` and `report.json` artifacts
+
+### GitHub Action
+Use the bundled action to run scans and upload artifacts:
+
+```yaml
+jobs:
+  authprobe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: authprobe/authprobe@v0.1.0
+        with:
+          mcp_url: https://mcp.example.com/mcp
+          args: --fail-on high
+```
 
 ---
 
