@@ -68,6 +68,7 @@ type scanConfig struct {
 	AllowPrivateIssuers bool
 	Insecure            bool // Skip TLS certificate verification (dev only)
 	NoFollowRedirects   bool // Stop at first response, don't follow HTTP redirects
+	Redact              bool
 	JSONPath            string
 	MDPath              string
 	BundlePath          string
@@ -134,7 +135,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	// If verbose mode is enabled, write the request details to stdout
 	if config.Verbose {
 		writeVerboseHeading(stdout, "Step 1: MCP probe (401 + WWW-Authenticate)")
-		if err := writeVerboseRequest(stdout, req); err != nil {
+		if err := writeVerboseRequest(stdout, req, config.Redact); err != nil {
 			return "", "", nil, "", false, err
 		}
 	}
@@ -151,13 +152,13 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	_, _ = drainBody(&resp.Body)
 
 	if config.Verbose {
-		if err := writeVerboseResponse(stdout, resp); err != nil {
+		if err := writeVerboseResponse(stdout, resp, config.Redact); err != nil {
 			return "", "", nil, "", false, err
 		}
 	}
 
 	// Add this request/response pair to the trace for later analysis
-	addTrace(trace, req, resp)
+	addTrace(trace, req, resp, config.Redact)
 
 	// MCP 2025-11-25 Streamable HTTP: A GET request with Accept: text/event-stream
 	// MUST return Content-Type: text/event-stream for SSE streaming.
@@ -246,8 +247,11 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		// RFC 9728 Section 4: The PRM document MUST be available at the well-known endpoint
 		// Only flag 404 as a failure if auth was required from Step 1 (401 response)
 		// If Step 1 returned 405, 404 from PRM just means no OAuth is configured
-		if status == http.StatusNotFound && candidate.Source == "root" && !hasPathSuffix && authRequiredFromProbe {
+		if status == http.StatusNotFound && candidate.Source == "root" && authRequiredFromProbe {
 			findings = append(findings, newFinding("DISCOVERY_ROOT_WELLKNOWN_404", "root PRM endpoint returned 404"))
+		}
+		if status == http.StatusNotFound && candidate.Source == "path-suffix" && reportFindings && authRequiredFromProbe {
+			findings = append(findings, newFinding("PRM_WELLKNOWN_PATH_SUFFIX_MISSING", "path-suffix PRM endpoint returned 404"))
 		}
 		if status != http.StatusOK && reportFindings && authRequiredFromProbe {
 			findings = append(findings, newFinding("PRM_HTTP_STATUS_NOT_200", fmt.Sprintf("%s status %d", candidate.Source, status)))
@@ -324,6 +328,9 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 				}
 			}
 			if jwksURI, ok := obj["jwks_uri"].(string); ok && jwksURI != "" {
+				if parsedJWKS, err := url.Parse(jwksURI); err == nil && parsedJWKS.IsAbs() && !isHTTPSURL(parsedJWKS) {
+					findings = append(findings, newFinding("PRM_JWKS_URI_NOT_HTTPS", fmt.Sprintf("%s jwks_uri %q not https", candidate.Source, jwksURI)))
+				}
 				if urlFindings := validateURLString(jwksURI, "jwks_uri", config, false); len(urlFindings) > 0 {
 					findings = append(findings, urlFindings...)
 				}
@@ -344,6 +351,9 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	}
 	if hasPathSuffix && !pathSuffixOK && fallbackSet {
 		bestPRM = fallbackPRM
+	}
+	if authRequiredFromProbe && resourceMetadata == "" && len(bestPRM.AuthorizationServers) > 0 {
+		findings = append(findings, newFinding("HEADER_STRIPPED_BY_PROXY_SUSPECTED", "missing WWW-Authenticate; PRM still discoverable"))
 	}
 
 	return bestPRM, findings, strings.TrimSpace(evidence.String()), nil
@@ -1095,7 +1105,7 @@ func postDCRProbe(client *http.Client, config scanConfig, endpoint string, paylo
 
 	if config.Verbose {
 		writeVerboseHeading(stdout, verboseLabel)
-		if err := writeVerboseRequest(stdout, req); err != nil {
+		if err := writeVerboseRequest(stdout, req, config.Redact); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -1113,11 +1123,11 @@ func postDCRProbe(client *http.Client, config scanConfig, endpoint string, paylo
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
 	if config.Verbose {
-		if err := writeVerboseResponse(stdout, resp); err != nil {
+		if err := writeVerboseResponse(stdout, resp, config.Redact); err != nil {
 			return resp, respBody, err
 		}
 	}
-	addTrace(trace, req, resp)
+	addTrace(trace, req, resp, config.Redact)
 
 	return resp, respBody, nil
 }
@@ -1278,7 +1288,7 @@ func postJSONRPCBytes(client *http.Client, config scanConfig, target string, bod
 	}
 	if config.Verbose {
 		writeVerboseHeading(stdout, verboseLabel)
-		if err := writeVerboseRequest(stdout, req); err != nil {
+		if err := writeVerboseRequest(stdout, req, config.Redact); err != nil {
 			return nil, nil, nil, err
 		}
 	}
@@ -1293,11 +1303,11 @@ func postJSONRPCBytes(client *http.Client, config scanConfig, target string, bod
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 	if config.Verbose {
-		if err := writeVerboseResponse(stdout, resp); err != nil {
+		if err := writeVerboseResponse(stdout, resp, config.Redact); err != nil {
 			return resp, respBody, nil, err
 		}
 	}
-	addTrace(trace, req, resp)
+	addTrace(trace, req, resp, config.Redact)
 
 	var parsed jsonRPCResponse
 	if len(respBody) > 0 {

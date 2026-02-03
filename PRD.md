@@ -63,8 +63,8 @@ These are Phase 2+ .
 ### Canonical commands (must ship)
 - `authprobe scan <mcp_url>`
 
-### Helper commands (small, but recommended)
-- `authprobe explain <FINDING_CODE>`
+### Helper flags (small, but recommended)
+- `authprobe scan --explain` (print RFC rationale for each scan step)
 
 ---
 
@@ -495,7 +495,6 @@ Each fixture includes:
 
 ### Test requirements
 - `go test ./...` must pass
-- Golden file tests must validate report stability
 - Finding selection order must be deterministic
 
 ---

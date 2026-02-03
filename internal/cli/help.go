@@ -50,6 +50,7 @@ OUTPUTS:
 
 DIAGNOSTICS:
   -v, --verbose            Verbose logs (includes request/response headers + bodies).
+      --no-redact          Disable redaction in verbose logs and evidence bundles.
   -e, --explain            Print an RFC rationale for each scan step.
   -l, --tool-list          Print MCP tool names with their titles (from tools/list).
   -d, --tool-detail <name> Print a single MCP tool's full JSON definition.

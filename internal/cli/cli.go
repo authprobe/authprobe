@@ -90,6 +90,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.String("md", "", "")
 	fs.String("bundle", "", "")
 	fs.String("output-dir", "", "")
+	noRedact := fs.Bool("no-redact", false, "")
 	verbose := fs.Bool("verbose", false, "")
 	fs.BoolVar(verbose, "v", false, "")
 	explain := fs.Bool("explain", false, "")
@@ -123,6 +124,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
 		Insecure:            fs.Lookup("insecure").Value.String() == "true",
 		NoFollowRedirects:   fs.Lookup("no-follow-redirects").Value.String() == "true",
+		Redact:              !*noRedact,
 		JSONPath:            fs.Lookup("json").Value.String(),
 		MDPath:              fs.Lookup("md").Value.String(),
 		BundlePath:          fs.Lookup("bundle").Value.String(),
@@ -268,7 +270,7 @@ func writeVerboseHeading(w io.Writer, title string) {
 	fmt.Fprintf(w, "\n== %s ==\n", title)
 }
 
-func writeVerboseRequest(w io.Writer, req *http.Request) error {
+func writeVerboseRequest(w io.Writer, req *http.Request, redact bool) error {
 	body, err := drainBody(&req.Body)
 	if err != nil {
 		return fmt.Errorf("read request body: %w", err)
@@ -287,20 +289,22 @@ func writeVerboseRequest(w io.Writer, req *http.Request) error {
 	if host != "" {
 		fmt.Fprintf(w, "> Host: %s\n", host)
 	}
-	writeHeaders(w, req.Header, ">")
-	writeBody(w, body, ">")
+	writeHeaders(w, req.Header, ">", redact)
+	contentType := req.Header.Get("Content-Type")
+	writeBody(w, redactBody(contentType, body, redact), ">")
 	return nil
 }
 
-func writeVerboseResponse(w io.Writer, resp *http.Response) error {
+func writeVerboseResponse(w io.Writer, resp *http.Response, redact bool) error {
 	body, err := drainBody(&resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response body: %w", err)
 	}
 
 	fmt.Fprintf(w, "< %s %s\n", resp.Proto, resp.Status)
-	writeHeaders(w, resp.Header, "<")
-	writeBody(w, body, "<")
+	writeHeaders(w, resp.Header, "<", redact)
+	contentType := resp.Header.Get("Content-Type")
+	writeBody(w, redactBody(contentType, body, redact), "<")
 	return nil
 }
 
@@ -316,7 +320,7 @@ func drainBody(body *io.ReadCloser) ([]byte, error) {
 	return payload, nil
 }
 
-func writeHeaders(w io.Writer, headers http.Header, prefix string) {
+func writeHeaders(w io.Writer, headers http.Header, prefix string, redact bool) {
 	if len(headers) == 0 {
 		return
 	}
@@ -327,7 +331,7 @@ func writeHeaders(w io.Writer, headers http.Header, prefix string) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		for _, value := range headers[key] {
-			fmt.Fprintf(w, "%s %s: %s\n", prefix, key, value)
+			fmt.Fprintf(w, "%s %s: %s\n", prefix, key, redactHeaderValue(key, value, redact))
 		}
 	}
 }

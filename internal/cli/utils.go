@@ -285,11 +285,11 @@ func applySafeHeaders(req *http.Request, headers []string) error {
 			return err
 		}
 		lower := strings.ToLower(key)
-		switch lower {
-		case "authorization", "cookie", "proxy-authorization":
-			continue
-		case "host":
+		if lower == "host" {
 			req.Host = value
+			continue
+		}
+		if isSensitiveHeader(key) {
 			continue
 		}
 		req.Header.Add(key, value)
@@ -307,6 +307,97 @@ func applyHeaders(req *http.Request, headers []string) error {
 		req.Header.Add(key, value)
 	}
 	return nil
+}
+
+func isSensitiveHeader(key string) bool {
+	switch strings.ToLower(key) {
+	case "authorization", "cookie", "set-cookie", "proxy-authorization":
+		return true
+	default:
+		return false
+	}
+}
+
+func redactHeaderValue(key, value string, redact bool) string {
+	if redact && isSensitiveHeader(key) {
+		return "[redacted]"
+	}
+	return value
+}
+
+func sanitizeHeadersForTrace(headers http.Header, redact bool) map[string]string {
+	redacted := map[string]string{}
+	for key, values := range headers {
+		if len(values) == 0 {
+			continue
+		}
+		value := values[0]
+		redacted[key] = redactHeaderValue(key, value, redact)
+	}
+	return redacted
+}
+
+func isSensitiveField(key string) bool {
+	lower := strings.ToLower(key)
+	switch lower {
+	case "access_token", "refresh_token", "id_token", "client_secret", "client_assertion", "assertion", "password", "token":
+		return true
+	default:
+		return strings.Contains(lower, "token") || strings.Contains(lower, "secret") || strings.Contains(lower, "password")
+	}
+}
+
+func redactJSONValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if isSensitiveField(key) {
+				typed[key] = "[redacted]"
+				continue
+			}
+			typed[key] = redactJSONValue(item)
+		}
+		return typed
+	case []any:
+		for i, item := range typed {
+			typed[i] = redactJSONValue(item)
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+func redactBody(contentType string, body []byte, redact bool) []byte {
+	if len(body) == 0 || !redact {
+		return body
+	}
+	lower := strings.ToLower(contentType)
+	if strings.Contains(lower, "application/json") || strings.Contains(lower, "+json") {
+		var payload any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return body
+		}
+		payload = redactJSONValue(payload)
+		redacted, err := json.Marshal(payload)
+		if err != nil {
+			return body
+		}
+		return redacted
+	}
+	if strings.Contains(lower, "application/x-www-form-urlencoded") {
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			return body
+		}
+		for key := range values {
+			if isSensitiveField(key) {
+				values.Set(key, "[redacted]")
+			}
+		}
+		return []byte(values.Encode())
+	}
+	return body
 }
 
 // resolveURL resolves a reference URL against a base URL.
@@ -596,6 +687,8 @@ func findingRFCExplanation(code string) string {
 		return "RFC 9728 requires authorization_servers in protected resource metadata for OAuth discovery."
 	case "PRM_RESOURCE_MISMATCH":
 		return "RFC 9728 requires the PRM resource value to exactly match the protected resource URL."
+	case "PRM_JWKS_URI_NOT_HTTPS":
+		return "RFC 9728 requires jwks_uri to use HTTPS for protected resource metadata."
 	case "PRM_RESOURCE_MISSING":
 		return "RFC 9728 requires a resource value in protected resource metadata."
 	case "PRM_HTTP_STATUS_NOT_200":
@@ -626,6 +719,8 @@ func findingRFCExplanation(code string) string {
 		return "RFC 8414 defines required metadata fields such as issuer, authorization_endpoint, and token_endpoint."
 	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
 		return "Issuer metadata resolution was blocked by local policy for private or disallowed addresses."
+	case "HEADER_STRIPPED_BY_PROXY_SUSPECTED":
+		return "The discovery header was missing, but metadata was still reachable, which can indicate proxy header stripping."
 	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH":
 		return "RFC 8414 expects metadata endpoints to align with the issuer host."
 	case "AUTH_SERVER_PKCE_S256_MISSING":
@@ -722,6 +817,7 @@ func findingSeverity(code string) string {
 		"DISCOVERY_ROOT_WELLKNOWN_404",
 		"PRM_MISSING_AUTHORIZATION_SERVERS",
 		"PRM_RESOURCE_MISMATCH",
+		"PRM_JWKS_URI_NOT_HTTPS",
 		"PRM_RESOURCE_MISSING",
 		"PRM_HTTP_STATUS_NOT_200",
 		"PRM_CONTENT_TYPE_NOT_JSON",
@@ -760,6 +856,7 @@ func findingSeverity(code string) string {
 		"DCR_DANGEROUS_URI_ACCEPTED":
 		return "high"
 	case "PRM_WELLKNOWN_PATH_SUFFIX_MISSING",
+		"HEADER_STRIPPED_BY_PROXY_SUSPECTED",
 		"AUTH_SERVER_ISSUER_PRIVATE_BLOCKED",
 		"SCOPES_WHITESPACE_RISK",
 		"TOKEN_RESPONSE_NOT_JSON_RISK",
@@ -796,6 +893,9 @@ func findingConfidence(code string) float64 {
 	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
 		// 0.85: Strong inference (0.85-0.95 range per PRD)
 		return 0.85
+	case "HEADER_STRIPPED_BY_PROXY_SUSPECTED":
+		// 0.9: Strong inference (0.85-0.95 range per PRD)
+		return 0.9
 	case "TOKEN_RESPONSE_NOT_JSON_RISK",
 		"TOKEN_HTTP200_ERROR_PAYLOAD_RISK":
 		// 0.7: Heuristic risk pattern (0.60-0.80 range per PRD)
@@ -848,19 +948,13 @@ func severityRank(severity string) int {
 }
 
 // addTrace adds an HTTP request/response to the trace log.
-func addTrace(trace *[]traceEntry, req *http.Request, resp *http.Response) {
-	headers := map[string]string{}
-	for key, values := range resp.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
+func addTrace(trace *[]traceEntry, req *http.Request, resp *http.Response, redact bool) {
 	*trace = append(*trace, traceEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		Method:    req.Method,
 		URL:       req.URL.String(),
 		Status:    resp.StatusCode,
-		Headers:   headers,
+		Headers:   sanitizeHeadersForTrace(resp.Header, redact),
 	})
 }
 
@@ -911,7 +1005,7 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 			return nil, nil, err
 		}
 		if config.Verbose {
-			if err := writeVerboseRequest(stdout, req); err != nil {
+			if err := writeVerboseRequest(stdout, req, config.Redact); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -928,11 +1022,11 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 		}
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		if config.Verbose {
-			if err := writeVerboseResponse(stdout, resp); err != nil {
+			if err := writeVerboseResponse(stdout, resp, config.Redact); err != nil {
 				return resp, body, err
 			}
 		}
-		addTrace(trace, req, resp)
+		addTrace(trace, req, resp, config.Redact)
 		if !isRedirectStatus(resp.StatusCode) || config.NoFollowRedirects {
 			return resp, body, nil
 		}
@@ -980,7 +1074,7 @@ func postTokenProbe(client *http.Client, config scanConfig, target string, trace
 	}
 	if config.Verbose {
 		writeVerboseHeading(stdout, verboseLabel)
-		if err := writeVerboseRequest(stdout, req); err != nil {
+		if err := writeVerboseRequest(stdout, req, config.Redact); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -995,10 +1089,10 @@ func postTokenProbe(client *http.Client, config scanConfig, target string, trace
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	if config.Verbose {
-		if err := writeVerboseResponse(stdout, resp); err != nil {
+		if err := writeVerboseResponse(stdout, resp, config.Redact); err != nil {
 			return resp, body, err
 		}
 	}
-	addTrace(trace, req, resp)
+	addTrace(trace, req, resp, config.Redact)
 	return resp, body, nil
 }
