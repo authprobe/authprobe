@@ -38,6 +38,7 @@ Download the latest release binary from GitHub Releases and put it on your PATH.
 ```bash
 docker pull ghcr.io/authprobe/authprobe:latest
 docker run --rm ghcr.io/authprobe/authprobe:latest scan https://mcp.example.com/mcp
+docker run --rm ghcr.io/authprobe/authprobe:latest scan https://compute.googleapis.com/mcp --openai-api-key=$OPENAI_API_KEY
 ```
 
 ### Run a scan
