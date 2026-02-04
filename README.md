@@ -49,7 +49,7 @@ authprobe scan https://mcp.example.com/mcp
 
 ## What you get
 
-The scan produces a funnel view output and an LLM explaination of spec expectation if an API key for anthropic or openai is provided
+The scan produces a funnel view output and an LLM explanation of spec expectations if an Anthropic or OpenAI API key is provided.
 
 ### 1) Funnel view (what broke, where)
 ```text
@@ -190,6 +190,8 @@ Common flags:
 - `--timeout <sec>` (default: 8)
 - `--mcp <mode>` (off, best-effort, strict MCP 2025-11-25 conformance checks)
 - `--rfc <mode>` (off, best-effort, strict RFC conformance checks)
+- `--openai-api-key <key>` (or set `OPENAI_API_KEY`; enables LLM explanations)
+- `--anthropic-api-key <key>` (or set `ANTHROPIC_API_KEY`; enables LLM explanations)
 - `--allow-private-issuers` (bypass [SSRF protection](docs/ssrf-protection.md) for internal networks)
 - `--insecure` (skip TLS certificate verification; for dev/testing with self-signed certs)
 - `--no-follow-redirects` (stop at first response; useful for debugging redirect chains)
