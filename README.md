@@ -113,8 +113,7 @@ LLM explanation
 **Critical distinction:** While JSON-RPC 2.0 allows `"id": null` in request
 objects, the semantics are problematic. The specification states that if `id`
 is null, it's technically a valid request (not a notification), and the server
-MUST respond with a response object containi
-ng `"id": null`.
+MUST respond with a response object containing `"id": null`.
 
 ### MCP 2025-11-25 Specification
 
