@@ -121,6 +121,14 @@ type traceEntry struct {
 type prmResult struct {
 	AuthorizationServers []string
 	Resource             string
+	MetadataFound        bool
+}
+
+type mcpAuthObservation struct {
+	Status                  int
+	ErrorMessage            string
+	WWWAuthenticatePresent  bool
+	WWWAuthenticateObserved string
 }
 
 func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, string, []finding, string, bool, error) {
@@ -224,6 +232,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	var bestPRM prmResult
 	var fallbackPRM prmResult
 	fallbackSet := false
+	metadataFound := false
 	// Track exact-match candidates so we can prefer a strict match when present.
 	exactMatchFound := false
 	// Gate PRM resource comparison findings on RFC mode (same behavior as other PRM checks).
@@ -291,6 +300,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			}
 			continue
 		}
+		metadataFound = true
 		prm := prmResult{}
 		// RFC 9728 Section 4.1: The "resource" field MUST be present and match the protected resource
 		if resourceValue, ok := obj["resource"].(string); ok {
@@ -421,6 +431,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	if hasPathSuffix && !exactMatchFound && fallbackSet {
 		bestPRM = fallbackPRM
 	}
+	bestPRM.MetadataFound = metadataFound
 	if authRequiredFromProbe && resourceMetadata == "" && len(bestPRM.AuthorizationServers) > 0 {
 		findings = append(findings, newFinding("HEADER_STRIPPED_BY_PROXY_SUSPECTED", "missing WWW-Authenticate; PRM still discoverable"))
 	}
@@ -622,9 +633,10 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 	return findings, strings.TrimSpace(evidence.String()), result
 }
 
-func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer, authRequired bool) (string, string, []finding) {
+func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer, authRequired bool) (string, string, []finding, *mcpAuthObservation) {
 	var evidence strings.Builder
 	findings := []finding{}
+	var authObservation *mcpAuthObservation
 
 	if !authRequired {
 		findings = append(findings, checkInitializeOrdering(client, config, authRequired, trace, stdout)...)
@@ -649,7 +661,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	initResp, _, initPayload, err := postJSONRPC(client, config, config.Target, initRequest, "", trace, stdout, "Step 2: MCP initialize + tools/list (initialize)")
 	if err != nil {
 		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", fmt.Sprintf("initialize error: %v", err)))
-		return "FAIL", fmt.Sprintf("initialize error: %v", err), findings
+		return "FAIL", fmt.Sprintf("initialize error: %v", err), findings, nil
 	}
 	fmt.Fprintf(&evidence, "initialize -> %d", initResp.StatusCode)
 	if initPayload == nil {
@@ -659,16 +671,22 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		fmt.Fprintf(&evidence, " (error: %s)", initPayload.Error.Message)
 	}
 	if initResp.StatusCode == http.StatusUnauthorized || initResp.StatusCode == http.StatusForbidden {
+		wwwAuthPresent, wwwAuthValue := hasWWWAuthenticate(initResp.Header.Values("WWW-Authenticate"))
+		authObservation = &mcpAuthObservation{
+			Status:                  initResp.StatusCode,
+			ErrorMessage:            jsonRPCErrorMessage(initPayload),
+			WWWAuthenticatePresent:  wwwAuthPresent,
+			WWWAuthenticateObserved: wwwAuthValue,
+		}
 		if authRequired {
 			fmt.Fprint(&evidence, " (auth required)")
-			return "SKIP", strings.TrimSpace(evidence.String()), findings
+			return "SKIP", strings.TrimSpace(evidence.String()), findings, authObservation
 		}
-		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", strings.TrimSpace(evidence.String())))
-		return "FAIL", strings.TrimSpace(evidence.String()), findings
+		return "FAIL", strings.TrimSpace(evidence.String()), findings, authObservation
 	}
 	if initResp.StatusCode != http.StatusOK || initPayload == nil || initPayload.Error != nil {
 		findings = append(findings, newFinding("MCP_INITIALIZE_FAILED", strings.TrimSpace(evidence.String())))
-		return "FAIL", strings.TrimSpace(evidence.String()), findings
+		return "FAIL", strings.TrimSpace(evidence.String()), findings, nil
 	}
 
 	findings = append(findings, validateJSONRPCResponse(config, initPayload, initRequest.ID, "initialize")...)
@@ -703,7 +721,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 		fmt.Fprintf(&evidence, "\n")
 		fmt.Fprintf(&evidence, "tools/list -> error: %v", err)
 		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
-		return "FAIL", strings.TrimSpace(evidence.String()), findings
+		return "FAIL", strings.TrimSpace(evidence.String()), findings, authObservation
 	}
 	fmt.Fprintf(&evidence, "\n")
 	fmt.Fprintf(&evidence, "tools/list -> %d", toolsResp.StatusCode)
@@ -716,14 +734,14 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	if toolsResp.StatusCode == http.StatusUnauthorized || toolsResp.StatusCode == http.StatusForbidden {
 		if authRequired {
 			fmt.Fprint(&evidence, " (auth required)")
-			return "SKIP", strings.TrimSpace(evidence.String()), findings
+			return "SKIP", strings.TrimSpace(evidence.String()), findings, authObservation
 		}
 		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
-		return "FAIL", strings.TrimSpace(evidence.String()), findings
+		return "FAIL", strings.TrimSpace(evidence.String()), findings, authObservation
 	}
 	if toolsResp.StatusCode != http.StatusOK || toolsPayload == nil || toolsPayload.Error != nil {
 		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
-		return "FAIL", strings.TrimSpace(evidence.String()), findings
+		return "FAIL", strings.TrimSpace(evidence.String()), findings, authObservation
 	}
 	findings = append(findings, validateJSONRPCResponse(config, toolsPayload, toolsRequest.ID, "tools/list")...)
 
@@ -744,7 +762,7 @@ func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]
 	if hasHighSeverity(findings) {
 		status = "FAIL"
 	}
-	return status, strings.TrimSpace(evidence.String()), findings
+	return status, strings.TrimSpace(evidence.String()), findings, authObservation
 }
 
 // parseInitializeResult validates the MCP initialize response per MCP 2025-11-25 spec.
@@ -788,6 +806,22 @@ func parseInitializeResult(config scanConfig, payload *jsonRPCResponse, resp *ht
 	}
 
 	return result, capabilities, sessionID, findings
+}
+
+func hasWWWAuthenticate(values []string) (bool, string) {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return true, value
+		}
+	}
+	return false, ""
+}
+
+func jsonRPCErrorMessage(payload *jsonRPCResponse) string {
+	if payload == nil || payload.Error == nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Error.Message)
 }
 
 // sendInitializedNotification sends the notifications/initialized per MCP 2025-11-25.

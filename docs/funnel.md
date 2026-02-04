@@ -122,6 +122,7 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 
 | Code                                | Expectation                                      | Spec                                                                       |
 |-------------------------------------|--------------------------------------------------|----------------------------------------------------------------------------|
+| `AUTH_REQUIRED_BUT_NOT_ADVERTISED`  | Auth required but OAuth discovery not advertised | Operational guidance                                                      |
 | `DISCOVERY_ROOT_WELLKNOWN_404`      | Root PRM reachable when path-suffix not required | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
 | `PRM_HTTP_STATUS_NOT_200`           | PRM endpoint returns `200 OK`                    | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
 | `PRM_CONTENT_TYPE_NOT_JSON`         | Response `Content-Type` is JSON                  | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
@@ -182,6 +183,6 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 | Step                 | Skip Condition                   |
 |----------------------|----------------------------------|
 | 2 (MCP Initialize)   | MCP mode is `off`                |
-| 3 (PRM Discovery)    | Auth not required (no 401)       |
+| 3 (PRM Discovery)    | Never (result determines auth)   |
 | 4 (Auth Server)      | No authorization servers found   |
 | 5 (Token Readiness)  | No token endpoints found         |

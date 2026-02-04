@@ -54,13 +54,14 @@ type funnel struct {
 	verboseOutput io.Writer
 
 	// Results accumulated from steps
-	findings         []finding
-	steps            []scanStep
-	resourceMetadata string
-	resolvedTarget   string
-	authRequired     bool
-	prmResult        prmResult
-	authMetadata     authServerMetadataResult
+	findings           []finding
+	steps              []scanStep
+	resourceMetadata   string
+	resolvedTarget     string
+	authRequired       bool
+	prmResult          prmResult
+	authMetadata       authServerMetadataResult
+	mcpAuthObservation *mcpAuthObservation
 }
 
 // newFunnel creates a new funnel instance with the given configuration.
@@ -191,6 +192,14 @@ func (f *funnel) skipIfNoRegistrationEndpoints() (bool, string) {
 	return false, ""
 }
 
+func (f *funnel) updateProbeDetailForAuth() {
+	for i := range f.steps {
+		if f.steps[i].ID == 1 && strings.Contains(f.steps[i].Detail, "auth not required") {
+			f.steps[i].Detail = "auth appears required (initialize returned 401/403)"
+		}
+	}
+}
+
 // Step execution methods
 
 // runMCPProbe probes the MCP endpoint with GET to check for 401 + WWW-Authenticate with resource_metadata.
@@ -208,7 +217,14 @@ func (f *funnel) runMCPProbe() (string, string, []finding, error) {
 
 // runMCPInitialize performs MCP JSON-RPC initialize handshake and tools/list.
 func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
-	status, detail, findings := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
+	status, detail, findings, authObservation := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
+	if authObservation != nil && (authObservation.Status == http.StatusUnauthorized || authObservation.Status == http.StatusForbidden) {
+		f.authRequired = true
+		if !authObservation.WWWAuthenticatePresent {
+			f.mcpAuthObservation = authObservation
+		}
+		f.updateProbeDetailForAuth()
+	}
 	return status, detail, findings, nil
 }
 
@@ -222,6 +238,22 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 	}
 	f.prmResult = result
 
+	prmSummary := ""
+	if len(result.AuthorizationServers) == 0 {
+		if result.MetadataFound {
+			prmSummary = "PRM reachable but no OAuth configuration found"
+		} else {
+			prmSummary = "PRM unreachable or unusable; OAuth discovery unavailable"
+		}
+	}
+	if prmSummary != "" {
+		if evidence != "" {
+			evidence = evidence + "\n" + prmSummary
+		} else {
+			evidence = prmSummary
+		}
+	}
+
 	// If valid PRM found (has authorization_servers), OAuth is configured
 	if len(result.AuthorizationServers) > 0 {
 		f.authRequired = true
@@ -229,10 +261,16 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 		return status, evidence, findings, nil
 	}
 
-	// No valid PRM found - if we came from 405, this is expected (no OAuth configured)
-	// Don't treat as failure, just note no OAuth is configured
+	if f.authRequired && f.mcpAuthObservation != nil && !f.mcpAuthObservation.WWWAuthenticatePresent {
+		findings = append(findings, buildAuthDiscoveryUnavailableFinding(*f.mcpAuthObservation, evidence))
+	}
+
+	// No valid PRM found - if auth isn't required, note missing OAuth config but keep status FAIL for unusable PRM.
 	if !f.authRequired {
-		return "PASS", evidence + "\nno OAuth configuration found", nil, nil
+		if result.MetadataFound {
+			return "PASS", evidence, nil, nil
+		}
+		return "FAIL", evidence, nil, nil
 	}
 
 	// Auth was required (401) but no valid PRM - this is a real failure

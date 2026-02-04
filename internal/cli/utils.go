@@ -757,11 +757,39 @@ func newFindingWithEvidence(code string, evidence []string) finding {
 	return f
 }
 
+func buildAuthDiscoveryUnavailableFinding(observation mcpAuthObservation, prmEvidence string) finding {
+	evidence := []string{fmt.Sprintf("initialize -> %d", observation.Status)}
+	if strings.TrimSpace(observation.ErrorMessage) != "" {
+		evidence = append(evidence, fmt.Sprintf("initialize error: %s", strings.TrimSpace(observation.ErrorMessage)))
+	}
+	if observation.WWWAuthenticatePresent {
+		value := strings.TrimSpace(observation.WWWAuthenticateObserved)
+		if value == "" {
+			value = "(present)"
+		}
+		evidence = append(evidence, fmt.Sprintf("WWW-Authenticate: %s", value))
+	} else {
+		evidence = append(evidence, "WWW-Authenticate: (missing)")
+	}
+	if strings.TrimSpace(prmEvidence) != "" {
+		for _, line := range strings.Split(prmEvidence, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			evidence = append(evidence, line)
+		}
+	}
+	return newFindingWithEvidence("AUTH_REQUIRED_BUT_NOT_ADVERTISED", evidence)
+}
+
 // findingRFCExplanation returns the RFC explanation for a finding code.
 func findingRFCExplanation(code string) string {
 	switch code {
 	case "DISCOVERY_NO_WWW_AUTHENTICATE":
 		return "RFC 9728 discovery expects a WWW-Authenticate header with resource_metadata for protected resources."
+	case "AUTH_REQUIRED_BUT_NOT_ADVERTISED":
+		return "Auth appears required but OAuth discovery was not advertised. Next steps: add WWW-Authenticate + PRM for OAuth/MCP discovery, or document the required non-OAuth auth (e.g., SigV4)."
 	case "DISCOVERY_ROOT_WELLKNOWN_404":
 		return "RFC 9728 defines the root /.well-known/oauth-protected-resource endpoint for PRM discovery."
 	case "PRM_MISSING_AUTHORIZATION_SERVERS":
@@ -897,6 +925,7 @@ func findingRFCExplanation(code string) string {
 func findingSeverity(code string) string {
 	switch code {
 	case "DISCOVERY_NO_WWW_AUTHENTICATE",
+		"AUTH_REQUIRED_BUT_NOT_ADVERTISED",
 		"DISCOVERY_ROOT_WELLKNOWN_404",
 		"PRM_MISSING_AUTHORIZATION_SERVERS",
 		"PRM_RESOURCE_MISMATCH",
