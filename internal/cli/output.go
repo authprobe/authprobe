@@ -229,7 +229,7 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 			fmt.Fprintln(&out, "- Because the resource has a path, the path-suffix PRM endpoint is required by RFC 9728.")
 		}
 	}
-	fmt.Fprintln(&out, "- PRM responses must be JSON objects with a resource that exactly matches the target URL.")
+	fmt.Fprintln(&out, "- PRM responses must be JSON objects with a resource that matches the target URL; trailing-slash mismatches are warned for compatibility.")
 	fmt.Fprintln(&out, "- authorization_servers is required for OAuth discovery; it lists issuer URLs.")
 
 	fmt.Fprintln(&out, "\n4) Authorization server metadata")

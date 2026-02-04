@@ -128,6 +128,7 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 | `PRM_NOT_JSON_OBJECT`               | Response is a JSON object                        | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
 | `PRM_RESOURCE_MISSING`              | PRM includes `resource` field                    | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
 | `PRM_RESOURCE_MISMATCH`             | `resource` matches MCP endpoint                  | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
+| `PRM_RESOURCE_TRAILING_SLASH`       | `resource` differs only by trailing slash (warn) | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
 | `PRM_MISSING_AUTHORIZATION_SERVERS` | PRM includes `authorization_servers`             | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
 | `PRM_BEARER_METHODS_INVALID`        | `bearer_methods_supported` values are valid      | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
 | `PRM_WELLKNOWN_PATH_SUFFIX_MISSING` | Path-suffix PRM exists when resource has path    | [RFC 9728 §4.1](https://datatracker.ietf.org/doc/html/rfc9728#section-4.1) |

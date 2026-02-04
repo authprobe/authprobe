@@ -170,6 +170,38 @@ func TestBuildPRMCandidates(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeResourceURL(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "trim trailing slash",
+			raw:  "https://api.githubcopilot.com/mcp/",
+			want: "https://api.githubcopilot.com/mcp",
+		},
+		{
+			name: "no trailing slash",
+			raw:  "https://api.githubcopilot.com/mcp",
+			want: "https://api.githubcopilot.com/mcp",
+		},
+		{
+			name: "keep root slash",
+			raw:  "https://api.githubcopilot.com/",
+			want: "https://api.githubcopilot.com/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canonicalizeResourceURL(tt.raw); got != tt.want {
+				t.Fatalf("canonicalizeResourceURL(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildPathSuffixCandidate(t *testing.T) {
 	tests := []struct {
 		name        string

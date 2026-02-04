@@ -204,6 +204,8 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		return prmResult{}, nil, "", err
 	}
 	expectedResource := config.Target
+	// Normalize resource identifiers so trailing-slash differences can be treated as equivalent.
+	expectedCanonical := canonicalizeResourceURL(expectedResource)
 
 	findings := []finding{}
 	// RFC 3986: Validate URL syntax conformance
@@ -222,7 +224,17 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	var bestPRM prmResult
 	var fallbackPRM prmResult
 	fallbackSet := false
-	pathSuffixOK := false
+	// Track exact-match candidates so we can prefer a strict match when present.
+	exactMatchFound := false
+	// Gate PRM resource comparison findings on RFC mode (same behavior as other PRM checks).
+	shouldReportPRMFindings := config.RFCMode != "off"
+	type prmResourceObservation struct {
+		source    string
+		resource  string
+		canonical string
+	}
+	// Collect resource values to evaluate matrix consistency after probing all candidates.
+	resourceObservations := []prmResourceObservation{}
 	for _, candidate := range candidates {
 		reportFindings := config.RFCMode != "off"
 		if hasPathSuffix {
@@ -290,16 +302,20 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			findings = append(findings, newFinding("PRM_RESOURCE_MISSING", fmt.Sprintf("%s resource missing", candidate.Source)))
 		}
 		if reportFindings {
-			// RFC 9728 Section 4.1: The "resource" value MUST match the protected resource identifier
-			if prm.Resource != "" && prm.Resource != expectedResource {
-				findings = append(findings, newFinding("PRM_RESOURCE_MISMATCH", fmt.Sprintf("%s resource %q != %q", candidate.Source, prm.Resource, expectedResource)))
-			}
 			// RFC 8707 Section 2: Resource identifiers MUST NOT include a fragment component
 			if rfcModeEnabled(config.RFCMode) {
 				if parsedResource, err := url.Parse(prm.Resource); err == nil && parsedResource.Fragment != "" {
 					findings = append(findings, newFinding("RESOURCE_FRAGMENT_FORBIDDEN", fmt.Sprintf("%s resource %q includes fragment (RFC 8707)", candidate.Source, prm.Resource)))
 				}
 			}
+		}
+		if prm.Resource != "" {
+			// Capture canonicalized forms for trailing-slash tolerant comparisons.
+			resourceObservations = append(resourceObservations, prmResourceObservation{
+				source:    candidate.Source,
+				resource:  prm.Resource,
+				canonical: canonicalizeResourceURL(prm.Resource),
+			})
 		}
 		// RFC 9728 Section 4.1: "authorization_servers" is an array of issuer URLs
 		if servers, ok := obj["authorization_servers"].([]any); ok {
@@ -340,11 +356,15 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			}
 		}
 
-		if hasPathSuffix {
-			if candidate.Source == "path-suffix" && prm.Resource == expectedResource {
+		if prm.Resource == expectedResource {
+			// Prefer the strict exact match (especially path-suffix) when it is available.
+			if !exactMatchFound || (hasPathSuffix && candidate.Source == "path-suffix") {
 				bestPRM = prm
-				pathSuffixOK = true
-			} else if !fallbackSet && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
+			}
+			// Note that we've seen an exact resource match.
+			exactMatchFound = true
+		} else if hasPathSuffix {
+			if !fallbackSet && (prm.Resource != "" || len(prm.AuthorizationServers) > 0) {
 				fallbackPRM = prm
 				fallbackSet = true
 			}
@@ -352,7 +372,53 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			bestPRM = prm
 		}
 	}
-	if hasPathSuffix && !pathSuffixOK && fallbackSet {
+	if shouldReportPRMFindings && len(resourceObservations) > 0 {
+		// Group observations by canonicalized resource to detect substantive mismatches.
+		canonicalGroups := make(map[string][]prmResourceObservation)
+		for _, obs := range resourceObservations {
+			canonicalGroups[obs.canonical] = append(canonicalGroups[obs.canonical], obs)
+		}
+		var evidence []string
+		if len(canonicalGroups) > 1 {
+			// Multiple canonicalized resources means a real mismatch across PRM variants.
+			evidence = append(evidence, fmt.Sprintf("expected resource %q", expectedResource))
+			for _, obs := range resourceObservations {
+				evidence = append(evidence, fmt.Sprintf("%s resource %q", obs.source, obs.resource))
+			}
+			findings = append(findings, newFindingWithEvidence("PRM_RESOURCE_MISMATCH", evidence))
+		} else {
+			var onlyCanonical string
+			for canonical := range canonicalGroups {
+				onlyCanonical = canonical
+			}
+			if onlyCanonical == expectedCanonical {
+				// Canonicalized match but differing literal strings => trailing-slash compatibility warning.
+				needsWarning := false
+				for _, obs := range resourceObservations {
+					if obs.resource != expectedResource {
+						needsWarning = true
+						break
+					}
+				}
+				if needsWarning {
+					evidence = append(evidence, "PRM resource differs only by trailing slash; strict clients may break.")
+					for _, obs := range resourceObservations {
+						evidence = append(evidence, fmt.Sprintf("%s resource %q", obs.source, obs.resource))
+					}
+					findings = append(findings, newFindingWithEvidence("PRM_RESOURCE_TRAILING_SLASH", evidence))
+				}
+			} else {
+				// Single canonicalized value that doesn't match the expected resource => mismatch.
+				evidence = append(evidence, fmt.Sprintf("expected resource %q", expectedResource))
+				for _, obs := range resourceObservations {
+					evidence = append(evidence, fmt.Sprintf("%s resource %q", obs.source, obs.resource))
+				}
+				findings = append(findings, newFindingWithEvidence("PRM_RESOURCE_MISMATCH", evidence))
+			}
+		}
+	}
+	// Fall back to the first usable PRM if the exact match is missing.
+	if hasPathSuffix && !exactMatchFound && fallbackSet {
 		bestPRM = fallbackPRM
 	}
 	if authRequiredFromProbe && resourceMetadata == "" && len(bestPRM.AuthorizationServers) > 0 {

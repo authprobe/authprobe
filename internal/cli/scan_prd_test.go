@@ -103,6 +103,147 @@ func TestPRMResourceMismatch(t *testing.T) {
 	}
 }
 
+func TestPRMResourceExactMatch(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	baseURL := server.URL
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 baseURL + "/issuer",
+			"authorization_endpoint": baseURL + "/authorize",
+			"token_endpoint":         baseURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+	})
+
+	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
+	if hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
+		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH finding")
+	}
+	if hasFinding(report.Findings, "PRM_RESOURCE_TRAILING_SLASH") {
+		t.Fatalf("did not expect PRM_RESOURCE_TRAILING_SLASH finding")
+	}
+}
+
+func TestPRMResourceTrailingSlashWarning(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	baseURL := server.URL
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp/",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp/",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 baseURL + "/issuer",
+			"authorization_endpoint": baseURL + "/authorize",
+			"token_endpoint":         baseURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+	})
+
+	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
+	if !hasFinding(report.Findings, "PRM_RESOURCE_TRAILING_SLASH") {
+		t.Fatalf("expected PRM_RESOURCE_TRAILING_SLASH finding")
+	}
+	if hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
+		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH finding")
+	}
+}
+
+func TestPRMResourceMatrixTrailingSlashWarning(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	baseURL := server.URL
+
+	mux.HandleFunc("/mcp/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp/",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 baseURL + "/issuer",
+			"authorization_endpoint": baseURL + "/authorize",
+			"token_endpoint":         baseURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+	})
+
+	report := runScanWithConfig(t, baseURL+"/mcp/", true, "best-effort")
+	if !hasFinding(report.Findings, "PRM_RESOURCE_TRAILING_SLASH") {
+		t.Fatalf("expected PRM_RESOURCE_TRAILING_SLASH finding")
+	}
+	if hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
+		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH finding")
+	}
+}
+
 func TestHeaderStrippedByProxySuspected(t *testing.T) {
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)

@@ -468,6 +468,20 @@ func buildPathSuffixCandidate(target *url.URL) (string, bool) {
 	return targetCopy.String(), hasPathSuffix
 }
 
+// canonicalizeResourceURL normalizes resource identifiers for comparison purposes.
+// It strips fragments and trims trailing slashes (except for the root path).
+func canonicalizeResourceURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	parsed.Fragment = ""
+	if parsed.Path != "/" {
+		parsed.Path = strings.TrimRight(parsed.Path, "/")
+	}
+	return parsed.String()
+}
+
 // extractResourceMetadata extracts resource_metadata from WWW-Authenticate headers.
 func extractResourceMetadata(headers []string) (string, bool) {
 	re := regexp.MustCompile(`resource_metadata\s*=\s*"([^"]+)"|resource_metadata\s*=\s*([^,\s]+)`)
@@ -754,6 +768,8 @@ func findingRFCExplanation(code string) string {
 		return "RFC 9728 requires authorization_servers in protected resource metadata for OAuth discovery."
 	case "PRM_RESOURCE_MISMATCH":
 		return "RFC 9728 requires the PRM resource value to exactly match the protected resource URL."
+	case "PRM_RESOURCE_TRAILING_SLASH":
+		return "PRM resource identifiers that differ only by a trailing slash can break strict clients; treat as a compatibility warning."
 	case "PRM_JWKS_URI_NOT_HTTPS":
 		return "RFC 9728 requires jwks_uri to use HTTPS for protected resource metadata."
 	case "PRM_RESOURCE_MISSING":
@@ -941,6 +957,7 @@ func findingSeverity(code string) string {
 		"AUTH_SERVER_PKCE_S256_MISSING",
 		"AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH",
 		"AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED",
+		"PRM_RESOURCE_TRAILING_SLASH",
 		"MCP_NOTIFICATION_BODY_PRESENT",
 		"MCP_NOTIFICATION_FAILED",
 		"MCP_ORIGIN_NOT_VALIDATED",
