@@ -53,29 +53,27 @@ The scan produces a funnel view output and an LLM explanation of spec expectatio
 
 ### 1) Funnel view (what broke, where)
 ```text
-Command:   authprobe scan https://compute.googleapis.com/mcp
-Scanning:  https://compute.googleapis.com/mcp
-Scan time: Feb 02, 2026 05:48:18 UTC
+Command:   authprobe scan https://api.githubcopilot.com/mcp/                                                                                                                                                                                                                [24/9382]
+Scanning:  https://api.githubcopilot.com/mcp/
+Scan time: Feb 04, 2026 07:00:55 UTC
 
 Funnel
-  [1] MCP probe (401 + WWW-Authenticate)      [-] SKIP
-        probe returned 405; checking PRM for OAuth config
+  [1] MCP probe (401 + WWW-Authenticate)      [+] PASS
+        401 with resource_metadata
 
-  [2] MCP initialize + tools/list             [+] PASS
-        initialize -> 200
-        notifications/initialized -> 202
-        tools/list -> 200 (tools: create_instance, delete_instance,
-        start_instance, stop_instance, +25 more)
+  [2] MCP initialize + tools/list             [-] SKIP                                                                                                                                                                                                                                       initialize -> 401 (non-JSON response) (auth required)
 
-  [3] PRM fetch matrix                        [+] PASS
-        https://compute.googleapis.com/.well-known/oauth-protected-resource ->
+  [3] PRM fetch matrix                        [X] FAIL
+        https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp/
+        -> 200
+        https://api.githubcopilot.com/.well-known/oauth-protected-resource ->
         404
-        https://compute.googleapis.com/.well-known/oauth-protected-resource/mcp
+        https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp
         -> 200
 
   [4] Auth server metadata                    [X] FAIL
-        https://accounts.google.com/.well-known/oauth-authorization-server ->
-        200
+        https://github.com/login/oauth/.well-known/oauth-authorization-server ->
+        404
 
   [5] Token endpoint readiness (heuristics)   [-] SKIP
         no token_endpoint in metadata
@@ -83,99 +81,74 @@ Funnel
   [6] Dynamic client registration (RFC 7591)  [-] SKIP
         no registration_endpoint in metadata
 
-Primary finding (HIGH): AUTH_SERVER_ISSUER_MISMATCH (confidence 1.00)
+Primary finding (HIGH): AUTH_SERVER_METADATA_INVALID (confidence 1.00)
   Evidence:
-      issuer mismatch: metadata issuer "https://accounts.google.com", expected
-      "https://accounts.google.com/"
-      RFC 8414 requires the metadata issuer to exactly match the issuer used for discovery.
+      https://github.com/login/oauth status 404
+      RFC 8414 defines required metadata fields such as issuer, authorization_endpoint, and
+      token_endpoint.
 
 LLM explanation
-===============
-MCP OAuth Scan Analysis: Google Compute Engine MCP Server
+# AUTH_SERVER_METADATA_INVALID Analysis
 
-Executive Summary
------------------
-Outcome: FAILURE IS VALID AND JUSTIFIED
+## Summary
+**This failure is VALID and JUSTIFIED.** The authorization server metadata endpoint is returning a 404, which violates the OAuth 2.0 Authorization Server Metadata specification (RFC 8414).
 
-The scan correctly identified a high-severity specification violation in 
-Google's OAuth authorization server metadata. The issuer mismatch 
-represents a legitimate RFC 8414 compliance failure that could lead to 
-security vulnerabilities in client implementations.
+## Specification Requirements
 
-Detailed Analysis
------------------
+### RFC 8414 §3 - Authorization Server Metadata Discovery
 
+RFC 8414 defines the well-known URI pattern for authorization server metadata discovery:
 
-Background Context
-------------------
+```
+https://[authorization-server]/.well-known/oauth-authorization-server
+```
 
-Target Server: https://compute.googleapis.com/mcp
+The specification states:
 
-Authorization Server: https://accounts.google.com/
+> "Authorization servers supporting metadata MUST make a JSON document containing metadata available at a path formed by inserting a well-known URI string into the authorization server's issuer identifier between the host component and the path component, if any."
 
-Scan Mode: Best-effort (lenient interpretation of ambiguous requirements)
+### MCP 2025-11-25 OAuth Integration
 
-The server is a Google Compute Engine MCP implementation that successfully 
-implements:
+The MCP specification references RFC 9728 for OAuth integration, which in turn relies on RFC 8414 for authorization server discovery. Section on OAuth states:
 
-MCP protocol (initialize, tools/list via JSON-RPC 2.0)
+> "MCP servers SHOULD support OAuth 2.0 for authentication when operating over HTTP transport."
 
-Protected Resource Metadata (PRM) discovery (RFC 9728)
+The Protected Resource Metadata (from step 3) points to `https://github.com/login/oauth` as the authorization server via the `authorization_servers` array in the PRM document.
 
-OAuth Authorization Server Metadata (RFC 8414): NOT implemented correctly
+### RFC 9728 §3 - Authorization Server Discovery
 
-Failure Breakdown: AUTH_SERVER_ISSUER_MISMATCH
+RFC 9728 §3.1 states:
 
-What Happened
--------------
+> "The protected resource metadata includes an 'authorization_servers' parameter that identifies the authorization servers that can issue access tokens for use with the protected resource."
 
-The scanner discovered the authorization server metadata at:
-https://accounts.google.com/.well-known/oauth-authorization-server
+Once the authorization server identifier is obtained, **RFC 8414 MUST be used to discover the authorization server's metadata**.
 
-The metadata document contained:
-{
-  "issuer": "https://accounts.google.com
-  ",
-  ...
-}
+## What's Failing
 
-Why This Is Wrong
------------------
+The scan attempted to fetch:
+```
+https://github.com/login/oauth/.well-known/oauth-authorization-server
+```
 
-RFC 8414 section 3.2 states explicitly:
-The "issuer" value returned MUST be identical to the Issuer URL that was 
-used as the prefix to "/.well-known/" in the URL used to retrieve the 
-metadata, per the construction rule in Section 3.
+Result: **404 Not Found**
 
-Construction Rule (RFC 8414 section 3):
+This means one of two things is wrong:
 
-Authorization Server Metadata is retrieved from: 
-  [Issuer]/.well-known/oauth-authorization-server
+1. **Incorrect authorization server identifier in PRM**: The PRM document at `https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp` (step 3 shows this returned 200) contains `authorization_servers` array with `"https://github.com/login/oauth"`, but this is not the correct issuer identifier.
 
-In this case:
+2. **Missing metadata endpoint**: GitHub has not implemented RFC 8414 metadata discovery at the expected location.
 
-Discovery URL used: 
-  https://accounts.google.com/.well-known/oauth-authorization-server
+## Why This Matters
 
-Implied issuer (prefix before /.well-known/): https://accounts.google.com/
- (with trailing slash)
-Metadata issuer claim: https://accounts.google.com
- (without trailing slash)
-Result: MISMATCH
+Without valid authorization server metadata, MCP clients cannot:
 
-Specification References
-------------------------
+- **Discover the authorization endpoint** (RFC 8414 §2 - required field `authorization_endpoint`)
+- **Discover the token endpoint** (RFC 8414 §2 - required field `token_endpoint`)
+- **Determine supported grant types** (RFC 8414 §2 - optional field `grant_types_supported`)
+- **Verify PKCE support** (RFC 8414 §2 - optional field `code_challenge_methods_supported`)
+- **Determine supported scopes** (RFC 8414 §2 - optional field `scopes_supported`)
 
-RFC 8414 section 3.2 (Authorization Server Metadata - Response):
-The "issuer" value returned MUST be identical to the Issuer URL that was 
-used as the prefix to "/.well-known/" in the URL used to retrieve the 
-metadata.
-
-RFC 8414 section 2 (Issuer Identifier):
-The issuer identifier is a URL that uses the "https" scheme and has no 
-query or fragment components. The issuer identifier is case-sensitive 
-and MUST exactly match 
-
+RFC
 exit status 2
 ```
 

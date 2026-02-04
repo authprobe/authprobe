@@ -483,26 +483,49 @@ func extractResourceMetadata(headers []string) (string, bool) {
 	return "", false
 }
 
-// buildMetadataURL builds the authorization server metadata URL.
-func buildMetadataURL(issuer string) string {
+// buildRFC8414DiscoveryURL builds the authorization server metadata URL per RFC 8414.
+// RFC 8414 requires inserting the well-known segment after the host and before the issuer path:
+// {scheme}://{host}/.well-known/oauth-authorization-server{issuer_path}
+func buildRFC8414DiscoveryURL(issuer string) (string, error) {
 	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return "", err
+	}
+	if parsed.RawQuery != "" {
+		return "", errIssuerQueryFragment
+	}
+	if !parsed.IsAbs() {
+		return "", errIssuerNotAbsolute
+	}
+	if parsed.Host == "" {
+		return "", errIssuerMissingHost
+	}
+	if strings.Contains(parsed.Path, "/.well-known/") {
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return parsed.String(), nil
+	}
+	issuerPath := parsed.EscapedPath()
+	if issuerPath == "" || issuerPath == "/" {
+		issuerPath = ""
+	} else if strings.HasSuffix(issuerPath, "/") {
+		issuerPath = strings.TrimSuffix(issuerPath, "/")
+	}
+	discovery := url.URL{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+		Path:   "/.well-known/oauth-authorization-server" + issuerPath,
+	}
+	return discovery.String(), nil
+}
+
+// buildMetadataURL builds the authorization server metadata URL (best-effort).
+func buildMetadataURL(issuer string) string {
+	metadataURL, err := buildRFC8414DiscoveryURL(issuer)
 	if err != nil {
 		return issuer
 	}
-	if strings.Contains(parsed.Path, "/.well-known/") {
-		return parsed.String()
-	}
-	path := parsed.Path
-	if path == "" {
-		path = "/"
-	}
-	if path != "/" && strings.HasSuffix(path, "/") {
-		path = strings.TrimSuffix(path, "/")
-	}
-	parsed.Path = strings.TrimSuffix(path, "/") + "/.well-known/oauth-authorization-server"
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String()
+	return metadataURL
 }
 
 var (

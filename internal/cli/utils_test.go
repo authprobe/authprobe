@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"net/url"
 	"testing"
 )
@@ -231,5 +232,48 @@ func TestBuildPathSuffixCandidate(t *testing.T) {
 				t.Errorf("buildPathSuffixCandidate() URL = %q, want %q", gotURL, tt.wantURL)
 			}
 		})
+	}
+}
+
+func TestBuildRFC8414DiscoveryURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		issuer string
+		want   string
+	}{
+		{
+			name:   "issuer with path",
+			issuer: "https://github.com/login/oauth",
+			want:   "https://github.com/.well-known/oauth-authorization-server/login/oauth",
+		},
+		{
+			name:   "issuer without path",
+			issuer: "https://as.example.com",
+			want:   "https://as.example.com/.well-known/oauth-authorization-server",
+		},
+		{
+			name:   "issuer with trailing slash",
+			issuer: "https://github.com/login/oauth/",
+			want:   "https://github.com/.well-known/oauth-authorization-server/login/oauth",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildRFC8414DiscoveryURL(tt.issuer)
+			if err != nil {
+				t.Fatalf("buildRFC8414DiscoveryURL() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("buildRFC8414DiscoveryURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildRFC8414DiscoveryURLErrorOnQuery(t *testing.T) {
+	_, err := buildRFC8414DiscoveryURL("https://example.com/issuer?foo=bar")
+	if !errors.Is(err, errIssuerQueryFragment) {
+		t.Fatalf("expected errIssuerQueryFragment, got %v", err)
 	}
 }

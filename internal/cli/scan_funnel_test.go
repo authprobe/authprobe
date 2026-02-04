@@ -155,7 +155,7 @@ func newAuthMetadataMissingTokenServer(t *testing.T) *httptest.Server {
 		})
 	})
 
-	mux.HandleFunc("/issuer/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                 baseURL + "/issuer",

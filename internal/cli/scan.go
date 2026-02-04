@@ -402,7 +402,17 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				continue
 			}
 		}
-		metadataURL := buildMetadataURL(issuer)
+		metadataURL, err := buildRFC8414DiscoveryURL(issuer)
+		if err != nil {
+			code := "AUTH_SERVER_METADATA_INVALID"
+			if errors.Is(err, errIssuerQueryFragment) {
+				code = "AUTH_SERVER_ISSUER_QUERY_FRAGMENT"
+			} else if errors.Is(err, errIssuerNotAbsolute) || errors.Is(err, errIssuerMissingHost) {
+				code = "AUTH_SERVER_METADATA_INVALID"
+			}
+			findings = append(findings, newFinding(code, fmt.Sprintf("issuer %q invalid: %v", issuer, err)))
+			continue
+		}
 		resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout, "Step 4: Auth server metadata")
 		if err != nil {
 			var policyErr fetchPolicyError
