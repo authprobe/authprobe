@@ -505,6 +505,50 @@ func buildMetadataURL(issuer string) string {
 	return parsed.String()
 }
 
+var (
+	errIssuerQueryFragment = errors.New("issuer has query or fragment")
+	errIssuerNotAbsolute   = errors.New("issuer is not an absolute URL")
+	errIssuerMissingHost   = errors.New("issuer is missing host")
+)
+
+// canonicalizeIssuerIdentifier normalizes issuer identifiers for RFC 8414 matching.
+// It follows RFC 3986/7230 case rules and normalizes HTTPS root issuers so
+// https://host and https://host/ compare equal, while keeping non-root paths exact.
+func canonicalizeIssuerIdentifier(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errIssuerQueryFragment
+	}
+	if !parsed.IsAbs() {
+		return "", errIssuerNotAbsolute
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return "", errIssuerMissingHost
+	}
+	port := parsed.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	path := parsed.EscapedPath()
+	if path == "" || path == "/" {
+		path = ""
+	}
+	canonical := url.URL{
+		Scheme: scheme,
+		Host:   host,
+		Path:   path,
+	}
+	return canonical.String(), nil
+}
+
 // issuerPrivate checks if an issuer URL points to a private/local address.
 func issuerPrivate(issuer string) bool {
 	parsed, err := url.Parse(issuer)

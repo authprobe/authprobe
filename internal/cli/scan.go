@@ -436,7 +436,21 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 		// RFC 8414 Section 2: The "issuer" value MUST be identical to the issuer identifier
 		if rfcModeEnabled(config.RFCMode) {
 			if issuerValue, ok := obj["issuer"].(string); ok {
-				if issuerValue != issuer {
+				expectedCanonical, err := canonicalizeIssuerIdentifier(issuer)
+				if err != nil {
+					findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("expected issuer %q invalid: %v", issuer, err)))
+					continue
+				}
+				actualCanonical, err := canonicalizeIssuerIdentifier(issuerValue)
+				if err != nil {
+					code := "AUTH_SERVER_METADATA_INVALID"
+					if errors.Is(err, errIssuerQueryFragment) {
+						code = "AUTH_SERVER_ISSUER_QUERY_FRAGMENT"
+					}
+					findings = append(findings, newFinding(code, fmt.Sprintf("metadata issuer %q invalid: %v", issuerValue, err)))
+					continue
+				}
+				if actualCanonical != expectedCanonical {
 					findings = append(findings, newFindingWithEvidence("AUTH_SERVER_ISSUER_MISMATCH", []string{
 						fmt.Sprintf("issuer mismatch: metadata issuer %q, expected %q", issuerValue, issuer),
 					}))
