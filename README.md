@@ -38,8 +38,8 @@ Download the latest release binary from GitHub Releases and put it on your PATH.
 ```bash
 docker pull ghcr.io/authprobe/authprobe:latest
 docker run --rm ghcr.io/authprobe/authprobe:latest scan https://mcp.example.com/mcp
-docker run --rm ghcr.io/authprobe/authprobe:latest scan https://compute.googleapis.com/mcp --openai-api-key=$OPENAI_API_KEY
-```
+docker run --rm ghcr.io/authprobe/authprobe:latest scan \
+	https://compute.googleapis.com/mcp --openai-api-key=$OPENAI_API_KEY ```
 
 ### Run a scan
 ```bash
@@ -49,107 +49,115 @@ authprobe scan https://mcp.example.com/mcp
 
 ## What you get
 
-The scan produces a funnel view output and an LLM explanation of spec expectations if an Anthropic or OpenAI API key is provided.
+The scan produces a funnel view output and an LLM explanation of spec
+expectations if an Anthropic or OpenAI API key is provided.
 
 ### 1) Funnel view (what broke, where)
 ```text
-Command:   authprobe scan https://api.githubcopilot.com/mcp/                                                                                                                                                                                                                [24/9382]
-Scanning:  https://api.githubcopilot.com/mcp/
-Scan time: Feb 04, 2026 07:00:55 UTC
+Command:   authprobe scan https://knowledge-mcp.global.api.aws Scanning:
+https://knowledge-mcp.global.api.aws
+Scan time: Feb 04, 2026 20:02:52 UTC
 
 Funnel
-  [1] MCP probe (401 + WWW-Authenticate)      [+] PASS
-        401 with resource_metadata
+  [1] MCP probe (401 + WWW-Authenticate)      [-] SKIP
+        probe returned 405; checking PRM for OAuth config
 
-  [2] MCP initialize + tools/list             [-] SKIP                                                                                                                                                                                                                                       initialize -> 401 (non-JSON response) (auth required)
+  [2] MCP initialize + tools/list             [X] FAIL
+        initialize -> 200
+        notifications/initialized -> 202
+        tools/list -> 200 (tools: aws___get_regional_availability,
+        aws___list_regions, aws___read_documentation, aws___recommend, +1 more)
 
-  [3] PRM fetch matrix                        [X] FAIL
-        https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp/
+  [3] PRM fetch matrix                        [+] PASS
+        https://knowledge-mcp.global.api.aws/.well-known/oauth-protected-resource
         -> 200
-        https://api.githubcopilot.com/.well-known/oauth-protected-resource ->
-        404
-        https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp
-        -> 200
+        no OAuth configuration found
 
-  [4] Auth server metadata                    [X] FAIL
-        https://github.com/login/oauth/.well-known/oauth-authorization-server ->
-        404
+  [4] Auth server metadata                    [-] SKIP
+        auth not required
 
   [5] Token endpoint readiness (heuristics)   [-] SKIP
-        no token_endpoint in metadata
+        auth not required
 
   [6] Dynamic client registration (RFC 7591)  [-] SKIP
-        no registration_endpoint in metadata
+        auth not required
 
-Primary finding (HIGH): AUTH_SERVER_METADATA_INVALID (confidence 1.00)
-  Evidence:
-      https://github.com/login/oauth status 404
-      RFC 8414 defines required metadata fields such as issuer, authorization_endpoint, and
-      token_endpoint.
+Primary finding (HIGH): MCP_JSONRPC_ID_NULL_ACCEPTED (confidence 1.00)
+Evidence:
+      null id probe status 200
+      MCP JSON-RPC requires request IDs to be strings or numbers; null IDs
+      must be rejected.
 
 LLM explanation
-# AUTH_SERVER_METADATA_INVALID Analysis
+# Analysis of MCP_JSONRPC_ID_NULL_ACCEPTED
 
-## Summary
-**This failure is VALID and JUSTIFIED.** The authorization server metadata endpoint is returning a 404, which violates the OAuth 2.0 Authorization Server Metadata specification (RFC 8414).
+## Verdict: **FAILURE IS VALID AND JUSTIFIED**
 
-## Specification Requirements
+## Specification Foundation
 
-### RFC 8414 §3 - Authorization Server Metadata Discovery
+### JSON-RPC 2.0 Specification (Core Requirement)
 
-RFC 8414 defines the well-known URI pattern for authorization server metadata discovery:
+**JSON-RPC 2.0 Section 4.1 - Request object:**
+> **id**: An identifier established by the Client [...] It MUST contain a
+> String, Number, or NULL value.
 
-```
-https://[authorization-server]/.well-known/oauth-authorization-server
-```
+**JSON-RPC 2.0 Section 4.2 - Response object:**
+> **id**: This member is REQUIRED. It MUST be the same as the value of the id
+> member in the Request Object.
 
-The specification states:
+**JSON-RPC 2.0 Section 5.1 - Notification:**
+> A Notification is a Request object **without an "id" member**. [...] The
+> Server MUST NOT reply to a Notification, including those that are within a
+> batch request.
 
-> "Authorization servers supporting metadata MUST make a JSON document containing metadata available at a path formed by inserting a well-known URI string into the authorization server's issuer identifier between the host component and the path component, if any."
+**Critical distinction:** While JSON-RPC 2.0 allows `"id": null` in request
+objects, the semantics are problematic. The specification states that if `id`
+is null, it's technically a valid request (not a notification), and the server
+MUST respond with a response object containi
+ng `"id": null`.
 
-### MCP 2025-11-25 OAuth Integration
+### MCP 2025-11-25 Specification
 
-The MCP specification references RFC 9728 for OAuth integration, which in turn relies on RFC 8414 for authorization server discovery. Section on OAuth states:
+**MCP 2025-11-25 inherits JSON-RPC 2.0** as its transport layer, but adds clarifications:
 
-> "MCP servers SHOULD support OAuth 2.0 for authentication when operating over HTTP transport."
+**Section "JSON-RPC Messages":**
+> MCP uses JSON-RPC 2.0 as its wire format. All messages are JSON-RPC 2.0 compliant.
 
-The Protected Resource Metadata (from step 3) points to `https://github.com/login/oauth` as the authorization server via the `authorization_servers` array in the PRM document.
+**Section "Request Identification":**
+> Request **id** field: MUST be a string or number (not null)
+>
+> Notifications: MUST NOT include an id field
 
-### RFC 9728 §3 - Authorization Server Discovery
+This is the **key specification requirement** that applies here. MCP
+explicitly narrows JSON-RPC 2.0's allowance of null IDs.
 
-RFC 9728 §3.1 states:
+## Why the Failure is Valid
 
-> "The protected resource metadata includes an 'authorization_servers' parameter that identifies the authorization servers that can issue access tokens for use with the protected resource."
+### 1. **MCP Explicitly Prohibits null IDs**
 
-Once the authorization server identifier is obtained, **RFC 8414 MUST be used to discover the authorization server's metadata**.
+The MCP specification **intentionally restricts** the JSON-RPC 2.0 id space:
 
-## What's Failing
+- **Allowed in MCP requests:** `string` | `number`
+- **Forbidden in MCP requests:** `null`
+- **Forbidden in MCP requests:** omitted (that creates a notification)
 
-The scan attempted to fetch:
-```
-https://github.com/login/oauth/.well-known/oauth-authorization-server
-```
+When the server at `https://knowledge-mcp.global.api.aws` accepted a request
+with `"id": null` and returned a 200 response, it violated MCP's narrower
+contract.
 
-Result: **404 Not Found**
+### 2. **Rationale for the MCP Restriction**
 
-This means one of two things is wrong:
+The MCP specification's prohibition of null IDs serves several purposes:
 
-1. **Incorrect authorization server identifier in PRM**: The PRM document at `https://api.githubcopilot.com/.well-known/oauth-protected-resource/mcp` (step 3 shows this returned 200) contains `authorization_servers` array with `"https://github.com/login/oauth"`, but this is not the correct issuer identifier.
+**a) Semantic Clarity:**
+- In JSON-RPC 2.0, `"id": null` creates ambiguity: is this a request expecting
+  a response, or an improperly formatted notification?
+- MCP eliminates this: notifications have NO id field; requests have non-null
+  ids
 
-2. **Missing metadata endpoint**: GitHub has not implemented RFC 8414 metadata discovery at the expected location.
-
-## Why This Matters
-
-Without valid authorization server metadata, MCP clients cannot:
-
-- **Discover the authorization endpoint** (RFC 8414 §2 - required field `authorization_endpoint`)
-- **Discover the token endpoint** (RFC 8414 §2 - required field `token_endpoint`)
-- **Determine supported grant types** (RFC 8414 §2 - optional field `grant_types_supported`)
-- **Verify PKCE support** (RFC 8414 §2 - optional field `code_challenge_methods_supported`)
-- **Determine supported scopes** (RFC 8414 §2 - optional field `scopes_supported`)
-
-RFC
+**b)
 exit status 2
+
 ```
 
 ## Core commands
