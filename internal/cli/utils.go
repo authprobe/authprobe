@@ -533,6 +533,52 @@ func buildRFC8414DiscoveryURL(issuer string) (string, error) {
 	return discovery.String(), nil
 }
 
+// buildIssuerDiscoveryCandidates returns ordered authorization server discovery URLs.
+// It applies RFC 8414 insertion and OIDC discovery insertion/append forms.
+func buildIssuerDiscoveryCandidates(issuer string) ([]string, error) {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return nil, err
+	}
+	if parsed.RawQuery != "" {
+		return nil, errIssuerQueryFragment
+	}
+	if !parsed.IsAbs() {
+		return nil, errIssuerNotAbsolute
+	}
+	if parsed.Host == "" {
+		return nil, errIssuerMissingHost
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	issuerPath := normalizeIssuerPath(parsed.EscapedPath())
+	candidates := []string{
+		(&url.URL{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   "/.well-known/oauth-authorization-server" + issuerPath,
+		}).String(),
+		(&url.URL{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   "/.well-known/openid-configuration" + issuerPath,
+		}).String(),
+		(&url.URL{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Host,
+			Path:   issuerPath + "/.well-known/openid-configuration",
+		}).String(),
+	}
+	return candidates, nil
+}
+
+func normalizeIssuerPath(path string) string {
+	if path == "" || path == "/" {
+		return ""
+	}
+	return strings.TrimSuffix(path, "/")
+}
+
 // buildMetadataURL builds the authorization server metadata URL (best-effort).
 func buildMetadataURL(issuer string) string {
 	metadataURL, err := buildRFC8414DiscoveryURL(issuer)
@@ -584,6 +630,78 @@ func canonicalizeIssuerIdentifier(raw string) (string, error) {
 		Path:   path,
 	}
 	return canonical.String(), nil
+}
+
+// issuerMatchesWithTolerance allows host/path-family matches for known issuer variants.
+func issuerMatchesWithTolerance(expected string, actual string) (bool, string, error) {
+	expectedCanonical, err := canonicalizeIssuerIdentifier(expected)
+	if err != nil {
+		return false, "", err
+	}
+	actualCanonical, err := canonicalizeIssuerIdentifier(actual)
+	if err != nil {
+		return false, "", err
+	}
+	if actualCanonical == expectedCanonical {
+		return true, "", nil
+	}
+	expectedURL, err := url.Parse(expectedCanonical)
+	if err != nil {
+		return false, "", err
+	}
+	actualURL, err := url.Parse(actualCanonical)
+	if err != nil {
+		return false, "", err
+	}
+	if issuerHostAndPathFamilyMatch(expectedURL, actualURL) {
+		return true, fmt.Sprintf("WARN: metadata issuer %q not exact match for %q; accepted due to host/path family match", actual, expected), nil
+	}
+	return false, "", nil
+}
+
+func issuerHostAndPathFamilyMatch(expected *url.URL, actual *url.URL) bool {
+	if !strings.EqualFold(expected.Hostname(), actual.Hostname()) {
+		return false
+	}
+	if expected.Scheme != "" && actual.Scheme != "" && !strings.EqualFold(expected.Scheme, actual.Scheme) {
+		return false
+	}
+	expectedPath := normalizeIssuerPath(expected.EscapedPath())
+	actualPath := normalizeIssuerPath(actual.EscapedPath())
+	expectedSegs := issuerPathSegments(expectedPath)
+	actualSegs := issuerPathSegments(actualPath)
+	if hasPathSegmentPrefix(expectedSegs, actualSegs) || hasPathSegmentPrefix(actualSegs, expectedSegs) {
+		return true
+	}
+	if len(expectedSegs) == len(actualSegs) && len(expectedSegs) >= 2 {
+		if expectedSegs[len(expectedSegs)-1] == actualSegs[len(actualSegs)-1] {
+			return true
+		}
+	}
+	return false
+}
+
+func issuerPathSegments(path string) []string {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
+}
+
+func hasPathSegmentPrefix(path []string, prefix []string) bool {
+	if len(prefix) == 0 || len(path) == 0 {
+		return false
+	}
+	if len(prefix) > len(path) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // issuerPrivate checks if an issuer URL points to a private/local address.
@@ -821,11 +939,11 @@ func findingRFCExplanation(code string) string {
 	case "AUTH_SERVER_ISSUER_QUERY_FRAGMENT":
 		return "RFC 8414 requires issuer identifiers to omit query and fragment components."
 	case "AUTH_SERVER_METADATA_CONTENT_TYPE_NOT_JSON":
-		return "RFC 8414 requires authorization server metadata responses to be JSON."
+		return "Authorization server metadata responses must be JSON (RFC 8414 or OIDC discovery)."
 	case "AUTH_SERVER_ISSUER_MISMATCH":
 		return "RFC 8414 requires the metadata issuer to exactly match the issuer used for discovery."
 	case "AUTH_SERVER_METADATA_UNREACHABLE":
-		return "RFC 8414 requires authorization server metadata to be retrievable at the well-known location."
+		return "Authorization server metadata should be retrievable at RFC 8414 or OIDC discovery well-known locations."
 	case "AUTH_SERVER_METADATA_INVALID":
 		return "RFC 8414 defines required metadata fields such as issuer, authorization_endpoint, and token_endpoint."
 	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
@@ -1116,6 +1234,9 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 		}
 		if err := applyHeaders(req, config.Headers); err != nil {
 			return nil, nil, err
+		}
+		if req.Header.Get("Accept") == "" {
+			req.Header.Set("Accept", "application/json")
 		}
 		if config.Verbose {
 			if err := writeVerboseRequest(stdout, req, config.Redact); err != nil {

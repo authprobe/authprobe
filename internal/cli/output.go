@@ -236,11 +236,17 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 	if len(prmResult.AuthorizationServers) == 0 {
 		fmt.Fprintln(&out, "- No authorization_servers found in PRM, so AuthProbe skips metadata fetches.")
 	} else {
-		fmt.Fprintln(&out, "- For each issuer, AuthProbe fetches {scheme}://{host}/.well-known/oauth-authorization-server{issuer_path} (RFC 8414).")
 		for _, issuer := range prmResult.AuthorizationServers {
-			metadataURL := buildMetadataURL(issuer)
 			fmt.Fprintf(&out, "- issuer: %s\n", issuer)
-			fmt.Fprintf(&out, "- metadata: %s\n", metadataURL)
+			candidates, err := buildIssuerDiscoveryCandidates(issuer)
+			if err != nil {
+				fmt.Fprintf(&out, "- metadata: error building discovery URLs (%v)\n", err)
+				continue
+			}
+			fmt.Fprintln(&out, "- metadata candidates (RFC 8414 + OIDC):")
+			fmt.Fprintf(&out, "  - %s\n", candidates[0])
+			fmt.Fprintf(&out, "  - %s\n", candidates[1])
+			fmt.Fprintf(&out, "  - %s\n", candidates[2])
 		}
 	}
 

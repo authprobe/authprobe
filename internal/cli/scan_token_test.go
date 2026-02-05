@@ -100,6 +100,7 @@ func runScanForServer(t *testing.T, target string) scanReport {
 		MCPMode:             "best-effort",
 		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
+		Insecure:            true,
 	}, &stdout, &verbose)
 	if err != nil {
 		t.Fatalf("runScanFunnel error: %v", err)

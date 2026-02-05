@@ -309,3 +309,24 @@ func TestBuildRFC8414DiscoveryURLErrorOnQuery(t *testing.T) {
 		t.Fatalf("expected errIssuerQueryFragment, got %v", err)
 	}
 }
+
+func TestBuildIssuerDiscoveryCandidates(t *testing.T) {
+	issuer := "https://login.microsoftonline.com/organizations/v2.0"
+	want := []string{
+		"https://login.microsoftonline.com/.well-known/oauth-authorization-server/organizations/v2.0",
+		"https://login.microsoftonline.com/.well-known/openid-configuration/organizations/v2.0",
+		"https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration",
+	}
+	got, err := buildIssuerDiscoveryCandidates(issuer)
+	if err != nil {
+		t.Fatalf("buildIssuerDiscoveryCandidates() error = %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("buildIssuerDiscoveryCandidates() len = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidate[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

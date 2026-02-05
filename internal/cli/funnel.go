@@ -125,7 +125,7 @@ func (f *funnel) getSteps() []stepDef {
 		{
 			ID:   4,
 			Name: "Auth server metadata",
-			Desc: "Fetch Authorization Server Metadata (RFC 8414) for each authorization_server in PRM",
+			Desc: "Fetch Authorization Server Metadata (RFC 8414 + OIDC discovery) for each authorization_server in PRM",
 			Skip: (*funnel).skipIfNoAuthServers,
 			Run:  (*funnel).runAuthServerMetadata,
 		},

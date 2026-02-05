@@ -93,7 +93,7 @@ func newOAuthDiscoveryServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
+	server := httptest.NewTLSServer(mux)
 	baseURL := server.URL
 	wwwAuth := fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL)
 
@@ -203,6 +203,7 @@ func runScanForServerAllowNoFindings(t *testing.T, target string) scanReport {
 		MCPMode:             "best-effort",
 		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
+		Insecure:            true,
 	}, &stdout, &verbose)
 	if err != nil {
 		t.Fatalf("runScanFunnel error: %v", err)

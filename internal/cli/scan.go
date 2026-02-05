@@ -501,10 +501,10 @@ type authServerMetadataResult struct {
 	RegistrationEndpoints []string
 }
 
-// fetchAuthServerMetadata retrieves Authorization Server Metadata per RFC 8414 (Step 4).
+// fetchAuthServerMetadata retrieves Authorization Server Metadata via RFC 8414 and OIDC discovery (Step 4).
 //
 // For each issuer in PRM's authorization_servers, this function fetches the OAuth metadata
-// from /.well-known/oauth-authorization-server and validates RFC compliance.
+// from RFC 8414 or OIDC discovery endpoints and validates RFC compliance.
 //
 // Inputs:
 //   - client: HTTP client for making requests
@@ -525,7 +525,7 @@ type authServerMetadataResult struct {
 // Validations performed per RFC 8414:
 //   - Issuer identifier has no query/fragment components
 //   - Metadata response is 200 OK with application/json content-type
-//   - Metadata issuer MUST exactly match the expected issuer (string equality)
+//   - Metadata issuer MUST match the expected issuer (tolerant host/path family match allowed for known variants)
 //   - Required fields: issuer, authorization_endpoint, token_endpoint
 //   - PKCE S256 support (code_challenge_methods_supported)
 //   - JWKS validity if jwks_uri is present
@@ -540,13 +540,11 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 		if issuer == "" {
 			continue
 		}
-		// RFC 3986: Validate issuer URL syntax
 		if rfcModeEnabled(config.RFCMode) {
 			if urlFindings := validateURLString(issuer, "issuer", config, false); len(urlFindings) > 0 {
 				findings = append(findings, urlFindings...)
 			}
 		}
-		// RFC 8414 Section 2: The issuer identifier MUST NOT contain query or fragment components
 		if rfcModeEnabled(config.RFCMode) {
 			if parsedIssuer, err := url.Parse(issuer); err == nil {
 				if parsedIssuer.RawQuery != "" || parsedIssuer.Fragment != "" {
@@ -554,163 +552,192 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				}
 			}
 		}
-		// SSRF protection: Block requests to private/loopback IP ranges
 		if !config.AllowPrivateIssuers {
 			if blocked := issuerPrivate(issuer); blocked {
 				findings = append(findings, newFinding("AUTH_SERVER_ISSUER_PRIVATE_BLOCKED", fmt.Sprintf("blocked issuer %s", issuer)))
 				continue
 			}
 		}
-		metadataURL, err := buildRFC8414DiscoveryURL(issuer)
+		candidates, err := buildIssuerDiscoveryCandidates(issuer)
 		if err != nil {
 			code := "AUTH_SERVER_METADATA_INVALID"
 			if errors.Is(err, errIssuerQueryFragment) {
 				code = "AUTH_SERVER_ISSUER_QUERY_FRAGMENT"
-			} else if errors.Is(err, errIssuerNotAbsolute) || errors.Is(err, errIssuerMissingHost) {
-				code = "AUTH_SERVER_METADATA_INVALID"
 			}
 			findings = append(findings, newFinding(code, fmt.Sprintf("issuer %q invalid: %v", issuer, err)))
 			continue
 		}
-		resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout, "Step 4: Auth server metadata")
-		if err != nil {
-			var policyErr fetchPolicyError
-			if errors.As(err, &policyErr) {
-				findings = append(findings, newFinding(policyErr.Code, fmt.Sprintf("issuer %s blocked: %s", issuer, policyErr.Detail)))
-			} else {
-				findings = append(findings, newFinding("AUTH_SERVER_METADATA_UNREACHABLE", fmt.Sprintf("%s fetch error: %v", issuer, err)))
-			}
-			continue
-		}
-		fmt.Fprintf(&evidence, "%s -> %d\n", metadataURL, resp.StatusCode)
-		// RFC 8414 Section 3: The metadata endpoint MUST return 200 OK
-		if resp.StatusCode != http.StatusOK {
-			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s status %d", issuer, resp.StatusCode)))
-			continue
-		}
-		// RFC 8414 Section 3: The response MUST have Content-Type: application/json
-		if rfcModeEnabled(config.RFCMode) {
-			contentType := resp.Header.Get("Content-Type")
-			if !strings.HasPrefix(contentType, "application/json") {
-				findings = append(findings, newFinding("AUTH_SERVER_METADATA_CONTENT_TYPE_NOT_JSON", fmt.Sprintf("%s content-type %q", issuer, contentType)))
+
+		issuerEvidence := []string{fmt.Sprintf("issuer: %s", issuer)}
+		warnings := []string{}
+		success := false
+		successViaOIDC := false
+		policyBlocked := false
+		hadNetworkError := false
+		hadServerError := false
+		hadInvalid := false
+
+		for idx, metadataURL := range candidates {
+			resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout, "Step 4: Auth server metadata")
+			if err != nil {
+				var policyErr fetchPolicyError
+				if errors.As(err, &policyErr) {
+					findings = append(findings, newFinding(policyErr.Code, fmt.Sprintf("issuer %s blocked: %s", issuer, policyErr.Detail)))
+					issuerEvidence = append(issuerEvidence, fmt.Sprintf("%s -> blocked: %s", metadataURL, policyErr.Detail))
+					policyBlocked = true
+					break
+				}
+				issuerEvidence = append(issuerEvidence, fmt.Sprintf("%s -> fetch error: %v", metadataURL, err))
+				hadNetworkError = true
 				continue
 			}
-		}
-		// RFC 8414 Section 3: The response body MUST be a JSON object
-		obj, ok := payload.(map[string]any)
-		if !ok {
-			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s response not JSON object", issuer)))
-			continue
-		}
-		// RFC 8414 Section 2: The "issuer" value MUST be identical to the issuer identifier
-		if rfcModeEnabled(config.RFCMode) {
-			if issuerValue, ok := obj["issuer"].(string); ok {
-				expectedCanonical, err := canonicalizeIssuerIdentifier(issuer)
-				if err != nil {
-					findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("expected issuer %q invalid: %v", issuer, err)))
+
+			issuerEvidence = append(issuerEvidence, fmt.Sprintf("%s -> %d", metadataURL, resp.StatusCode))
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+				continue
+			}
+			if resp.StatusCode >= http.StatusInternalServerError {
+				hadServerError = true
+				continue
+			}
+			if resp.StatusCode != http.StatusOK {
+				hadInvalid = true
+				continue
+			}
+			if rfcModeEnabled(config.RFCMode) {
+				contentType := resp.Header.Get("Content-Type")
+				if !strings.HasPrefix(contentType, "application/json") {
+					hadInvalid = true
 					continue
 				}
-				actualCanonical, err := canonicalizeIssuerIdentifier(issuerValue)
+			}
+			obj, ok := payload.(map[string]any)
+			if !ok {
+				hadInvalid = true
+				continue
+			}
+			if rfcModeEnabled(config.RFCMode) {
+				issuerValue, ok := obj["issuer"].(string)
+				if !ok || issuerValue == "" {
+					hadInvalid = true
+					continue
+				}
+				matches, warning, err := issuerMatchesWithTolerance(issuer, issuerValue)
 				if err != nil {
 					code := "AUTH_SERVER_METADATA_INVALID"
 					if errors.Is(err, errIssuerQueryFragment) {
 						code = "AUTH_SERVER_ISSUER_QUERY_FRAGMENT"
 					}
 					findings = append(findings, newFinding(code, fmt.Sprintf("metadata issuer %q invalid: %v", issuerValue, err)))
+					hadInvalid = true
 					continue
 				}
-				if actualCanonical != expectedCanonical {
+				if !matches {
 					findings = append(findings, newFindingWithEvidence("AUTH_SERVER_ISSUER_MISMATCH", []string{
 						fmt.Sprintf("issuer mismatch: metadata issuer %q, expected %q", issuerValue, issuer),
 					}))
+					hadInvalid = true
 					continue
 				}
-			} else {
-				findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing issuer", issuer)))
+				if warning != "" {
+					warnings = append(warnings, warning)
+				}
+			}
+			authorizationEndpoint, ok := obj["authorization_endpoint"].(string)
+			if !ok || authorizationEndpoint == "" {
+				hadInvalid = true
 				continue
 			}
-		}
-		// RFC 8414 Section 2: "authorization_endpoint" is REQUIRED
-		authorizationEndpoint, ok := obj["authorization_endpoint"].(string)
-		if !ok || authorizationEndpoint == "" {
-			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing authorization_endpoint", issuer)))
-			continue
-		}
-		// RFC 8414 Section 2: "token_endpoint" is REQUIRED (except for implicit-only servers)
-		tokenEndpoint, ok := obj["token_endpoint"].(string)
-		if !ok || tokenEndpoint == "" {
-			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s missing token_endpoint", issuer)))
-			continue
-		}
-		// RFC 7591 Section 3: "registration_endpoint" is OPTIONAL - used for Dynamic Client Registration
-		registrationEndpoint, _ := obj["registration_endpoint"].(string)
-		if rfcModeEnabled(config.RFCMode) {
-			if urlFindings := validateURLString(authorizationEndpoint, "authorization_endpoint", config, false); len(urlFindings) > 0 {
-				findings = append(findings, urlFindings...)
+			tokenEndpoint, ok := obj["token_endpoint"].(string)
+			if !ok || tokenEndpoint == "" {
+				hadInvalid = true
+				continue
 			}
-		}
-		if rfcModeEnabled(config.RFCMode) {
-			if urlFindings := validateURLString(tokenEndpoint, "token_endpoint", config, false); len(urlFindings) > 0 {
-				findings = append(findings, urlFindings...)
-			}
-		}
-		if rfcModeEnabled(config.RFCMode) {
-			parsedIssuer, err := url.Parse(issuer)
-			if err == nil {
-				issuerHost := parsedIssuer.Hostname()
-				if issuerHost != "" {
-					checkEndpointHostMismatch(&findings, authorizationEndpoint, issuerHost, "authorization_endpoint")
-					checkEndpointHostMismatch(&findings, tokenEndpoint, issuerHost, "token_endpoint")
-				}
-			}
-		}
-		// RFC 7636 Section 4.2: Servers SHOULD support "S256" for PKCE
-		// MCP OAuth requires PKCE with S256 for public clients
-		if rfcModeEnabled(config.RFCMode) {
-			if methods, ok := obj["code_challenge_methods_supported"].([]any); ok {
-				if !containsString(methods, "S256") {
-					findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing S256", issuer)))
-				}
-			} else {
-				findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing code_challenge_methods_supported", issuer)))
-			}
-		}
-		// RFC 8414 Section 2: If present, protected_resources SHOULD include the resource
-		if rfcModeEnabled(config.RFCMode) && prm.Resource != "" {
-			if protectedResources, ok := obj["protected_resources"].([]any); ok && len(protectedResources) > 0 {
-				if !containsString(protectedResources, prm.Resource) {
-					findings = append(findings, newFinding("AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH", fmt.Sprintf("resource %q not in protected_resources", prm.Resource)))
-				}
-			}
-		}
-		// RFC 7517: Validate JWKS endpoint if present
-		if rfcModeEnabled(config.RFCMode) {
-			if jwksURI, ok := obj["jwks_uri"].(string); ok && jwksURI != "" {
-				if urlFindings := validateURLString(jwksURI, "jwks_uri", config, false); len(urlFindings) > 0 {
+			registrationEndpoint, _ := obj["registration_endpoint"].(string)
+			if rfcModeEnabled(config.RFCMode) {
+				if urlFindings := validateURLString(authorizationEndpoint, "authorization_endpoint", config, false); len(urlFindings) > 0 {
 					findings = append(findings, urlFindings...)
 				}
-				// RFC 7517 Section 5: JWKS MUST be a JSON object with a "keys" array
-				jwksResp, jwksPayload, err := fetchJSON(client, config, jwksURI, trace, stdout, "Step 4: Auth server metadata")
-				if err != nil {
-					var policyErr fetchPolicyError
-					if errors.As(err, &policyErr) {
-						findings = append(findings, newFinding(policyErr.Code, fmt.Sprintf("jwks blocked: %s", policyErr.Detail)))
-					} else {
-						findings = append(findings, newFinding("JWKS_FETCH_ERROR", fmt.Sprintf("%s fetch error: %v", jwksURI, err)))
+				if urlFindings := validateURLString(tokenEndpoint, "token_endpoint", config, false); len(urlFindings) > 0 {
+					findings = append(findings, urlFindings...)
+				}
+				parsedIssuer, err := url.Parse(issuer)
+				if err == nil {
+					issuerHost := parsedIssuer.Hostname()
+					if issuerHost != "" {
+						checkEndpointHostMismatch(&findings, authorizationEndpoint, issuerHost, "authorization_endpoint")
+						checkEndpointHostMismatch(&findings, tokenEndpoint, issuerHost, "token_endpoint")
 					}
-				} else if jwksResp.StatusCode != http.StatusOK {
-					findings = append(findings, newFinding("JWKS_FETCH_ERROR", fmt.Sprintf("%s status %d", jwksURI, jwksResp.StatusCode)))
-				} else if jwksObj, ok := jwksPayload.(map[string]any); !ok {
-					findings = append(findings, newFinding("JWKS_INVALID", fmt.Sprintf("%s not JSON object", jwksURI)))
-				} else if keys, ok := jwksObj["keys"].([]any); !ok || len(keys) == 0 {
-					findings = append(findings, newFinding("JWKS_INVALID", fmt.Sprintf("%s missing keys array", jwksURI)))
+				}
+				if methods, ok := obj["code_challenge_methods_supported"].([]any); ok {
+					if !containsString(methods, "S256") {
+						findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing S256", issuer)))
+					}
+				} else {
+					findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing code_challenge_methods_supported", issuer)))
+				}
+				if prm.Resource != "" {
+					if protectedResources, ok := obj["protected_resources"].([]any); ok && len(protectedResources) > 0 {
+						if !containsString(protectedResources, prm.Resource) {
+							findings = append(findings, newFinding("AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH", fmt.Sprintf("resource %q not in protected_resources", prm.Resource)))
+						}
+					}
+				}
+				if jwksURI, ok := obj["jwks_uri"].(string); ok && jwksURI != "" {
+					if urlFindings := validateURLString(jwksURI, "jwks_uri", config, false); len(urlFindings) > 0 {
+						findings = append(findings, urlFindings...)
+					}
+					jwksResp, jwksPayload, err := fetchJSON(client, config, jwksURI, trace, stdout, "Step 4: Auth server metadata")
+					if err != nil {
+						var policyErr fetchPolicyError
+						if errors.As(err, &policyErr) {
+							findings = append(findings, newFinding(policyErr.Code, fmt.Sprintf("jwks blocked: %s", policyErr.Detail)))
+						} else {
+							findings = append(findings, newFinding("JWKS_FETCH_ERROR", fmt.Sprintf("%s fetch error: %v", jwksURI, err)))
+						}
+					} else if jwksResp.StatusCode != http.StatusOK {
+						findings = append(findings, newFinding("JWKS_FETCH_ERROR", fmt.Sprintf("%s status %d", jwksURI, jwksResp.StatusCode)))
+					} else if jwksObj, ok := jwksPayload.(map[string]any); !ok {
+						findings = append(findings, newFinding("JWKS_INVALID", fmt.Sprintf("%s not JSON object", jwksURI)))
+					} else if keys, ok := jwksObj["keys"].([]any); !ok || len(keys) == 0 {
+						findings = append(findings, newFinding("JWKS_INVALID", fmt.Sprintf("%s missing keys array", jwksURI)))
+					}
 				}
 			}
+
+			result.TokenEndpoints = append(result.TokenEndpoints, tokenEndpoint)
+			if registrationEndpoint != "" {
+				result.RegistrationEndpoints = append(result.RegistrationEndpoints, registrationEndpoint)
+			}
+			success = true
+			if idx > 0 {
+				successViaOIDC = true
+			}
+			break
 		}
-		result.TokenEndpoints = append(result.TokenEndpoints, tokenEndpoint)
-		if registrationEndpoint != "" {
-			result.RegistrationEndpoints = append(result.RegistrationEndpoints, registrationEndpoint)
+
+		if successViaOIDC {
+			issuerEvidence = append(issuerEvidence, "Authorization server metadata discovered via OIDC discovery endpoint.")
 		}
+		for _, warning := range warnings {
+			issuerEvidence = append(issuerEvidence, warning)
+		}
+		for _, line := range issuerEvidence {
+			fmt.Fprintf(&evidence, "%s\n", line)
+		}
+
+		if success || policyBlocked {
+			continue
+		}
+		if hadNetworkError || hadServerError {
+			findings = append(findings, newFinding("AUTH_SERVER_METADATA_UNREACHABLE", fmt.Sprintf("%s metadata fetch failed", issuer)))
+			continue
+		}
+		if hadInvalid {
+			findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s metadata invalid", issuer)))
+			continue
+		}
+		findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s metadata discovery failed", issuer)))
 	}
 	return findings, strings.TrimSpace(evidence.String()), result
 }

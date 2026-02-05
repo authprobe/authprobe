@@ -64,6 +64,7 @@ This document explains how AuthProbe stages its scan, what each step checks, and
         │ ╔═══ Step 4: Auth Server Metadata ═══════════════╪══════════════════════════════════╗
         │                                                  │                                  │
         │  GET /.well-known/oauth-authorization-server     │                                  │
+        │  GET /.well-known/openid-configuration           │                                  │
         ├──────────────────────────────────────────────────┼─────────────────────────────────►│
         │                                                  │                                  │
         │  200 OK {"issuer":"…","token_endpoint":"…"}      │                                  │
@@ -95,7 +96,7 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 | 1    | Discovery            | Probe MCP endpoint for auth requirements             | `401 Unauthorized` + `WWW-Authenticate` header with `resource_metadata`  | [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728)                                                                   |
 | 2    | MCP Initialize       | JSON-RPC `initialize` + `tools/list`                 | `200 OK` + valid JSON responses                                          | [MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)                                                  |
 | 3    | PRM Discovery        | Fetch Protected Resource Metadata (root/path-suffix) | `200 OK`, JSON with `resource` + `authorization_servers`                 | [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)        |
-| 4    | Auth Server Metadata | Fetch `/.well-known/oauth-authorization-server`      | `200 OK`, JSON with `issuer`, `authorization_endpoint`, `token_endpoint` | [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636)        |
+| 4    | Auth Server Metadata | Fetch RFC 8414 or OIDC discovery metadata            | `200 OK`, JSON with `issuer`, `authorization_endpoint`, `token_endpoint` | [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [OIDC Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636) |
 | 5    | Token Readiness      | POST invalid grant to token endpoint                 | JSON error response, not `200` with error payload                        | OAuth best practice                                                                                                         |
 | 6    | DCR (Optional)       | POST dynamic client registration                     | `201 Created`, JSON with `client_id`                                     | [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)                                                                   |
 
