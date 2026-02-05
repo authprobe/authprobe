@@ -205,7 +205,34 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	return resourceMetadata, resolvedTarget(resp, config.Target), findings, "401 with resource_metadata", true, nil
 }
 
-// fetchPRMMatrix retrieves protected resource metadata across discovery candidates.
+// fetchPRMMatrix retrieves OAuth Protected Resource Metadata (RFC 9728) from well-known endpoints.
+//
+// This function probes multiple PRM candidates to discover OAuth configuration:
+//   - Root endpoint: /.well-known/oauth-protected-resource
+//   - Path-suffix endpoint: /.well-known/oauth-protected-resource/<path>
+//   - Direct URL from WWW-Authenticate resource_metadata parameter (if provided)
+//
+// Inputs:
+//   - client: HTTP client for making requests
+//   - config: Scan configuration (target URL, RFC mode, timeouts, etc.)
+//   - resourceMetadata: URL from WWW-Authenticate resource_metadata param (empty if not provided)
+//   - resolvedTarget: The resolved target URL after any redirects from Step 1
+//   - trace: Request/response trace log for debugging and evidence collection
+//   - stdout: Writer for verbose output
+//   - authRequiredFromProbe: true if Step 1 returned 401 (auth definitely required),
+//     false if Step 1 returned 405/200 (auth status unknown, checking PRM to determine)
+//
+// Outputs:
+//   - prmResult: Best matching PRM with Resource, AuthorizationServers, and MetadataFound flag
+//   - []finding: RFC compliance findings (e.g., PRM_RESOURCE_MISMATCH, PRM_MISSING_AUTHORIZATION_SERVERS)
+//   - string: Evidence summary (URLs probed and their HTTP status codes)
+//   - error: Non-nil only for fatal errors (not HTTP 404s)
+//
+// Behavior:
+//   - When authRequiredFromProbe=true (401 from Step 1): 404 from PRM is flagged as a finding
+//   - When authRequiredFromProbe=false (405 from Step 1): 404 from PRM is normal (no OAuth configured)
+//   - If valid PRM is found with authorization_servers, the caller should set authRequired=true
+//   - Prefers exact resource match; falls back to first usable PRM if no exact match
 func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer, authRequiredFromProbe bool) (prmResult, []finding, string, error) {
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
