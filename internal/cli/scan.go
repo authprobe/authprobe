@@ -131,6 +131,31 @@ type mcpAuthObservation struct {
 	WWWAuthenticateObserved string
 }
 
+// probeMCP probes an MCP endpoint to determine authentication requirements (Step 1).
+//
+// This function sends a GET request with Accept: text/event-stream to trigger the
+// MCP Streamable HTTP handshake and discover OAuth configuration via RFC 9728.
+//
+// Inputs:
+//   - client: HTTP client for making requests
+//   - config: Scan configuration (target URL, headers, verbose mode, etc.)
+//   - trace: Request/response trace log for debugging and evidence collection
+//   - stdout: Writer for verbose output
+//
+// Outputs (in order):
+//   - resourceMetadata: URL from WWW-Authenticate resource_metadata param (empty if not found)
+//   - resolvedTarget: The target URL after any redirects (for constructing PRM URLs)
+//   - []finding: MCP/RFC compliance findings (e.g., MCP_GET_NOT_SSE, DISCOVERY_NO_WWW_AUTHENTICATE)
+//   - summary: Human-readable summary of the probe result
+//   - authRequired: true if 401 received (auth definitely required),
+//     false if 405/200 received (auth status unknown, caller should check PRM)
+//   - error: Non-nil only for fatal errors (network failures, invalid config)
+//
+// Response handling:
+//   - 401 Unauthorized: Auth required. Extract resource_metadata from WWW-Authenticate header.
+//   - 405 Method Not Allowed: Server doesn't support GET/SSE. Auth status unknown; check PRM.
+//   - 200 OK: Auth not required (public endpoint). Validates SSE content-type per MCP spec.
+//   - Timeout: Returns MCP_PROBE_TIMEOUT finding (servers must respond promptly per MCP spec).
 func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, string, []finding, string, bool, error) {
 	findings := []finding{}
 	// Create a GET request to the target MCP endpoint
@@ -476,7 +501,37 @@ type authServerMetadataResult struct {
 	RegistrationEndpoints []string
 }
 
-// fetchAuthServerMetadata retrieves authorization server metadata per RFC 8414.
+// fetchAuthServerMetadata retrieves Authorization Server Metadata per RFC 8414 (Step 4).
+//
+// For each issuer in PRM's authorization_servers, this function fetches the OAuth metadata
+// from /.well-known/oauth-authorization-server and validates RFC compliance.
+//
+// Inputs:
+//   - client: HTTP client for making requests
+//   - config: Scan configuration (RFC mode, SSRF settings, verbose mode, etc.)
+//   - prm: Protected Resource Metadata from Step 3 (contains authorization_servers list)
+//   - trace: Request/response trace log for debugging and evidence collection
+//   - stdout: Writer for verbose output
+//
+// Outputs:
+//   - []finding: RFC compliance findings for each issuer:
+//   - AUTH_SERVER_ISSUER_MISMATCH: metadata issuer != expected issuer (MUST violation)
+//   - AUTH_SERVER_METADATA_INVALID: missing required fields or invalid format
+//   - AUTH_SERVER_PKCE_S256_MISSING: no S256 support (SHOULD violation)
+//   - JWKS_INVALID: malformed JWKS at jwks_uri
+//   - string: Evidence summary (metadata URLs probed and HTTP status codes)
+//   - authServerMetadataResult: Contains TokenEndpoints and RegistrationEndpoints for Steps 5-6
+//
+// Validations performed per RFC 8414:
+//   - Issuer identifier has no query/fragment components
+//   - Metadata response is 200 OK with application/json content-type
+//   - Metadata issuer MUST exactly match the expected issuer (string equality)
+//   - Required fields: issuer, authorization_endpoint, token_endpoint
+//   - PKCE S256 support (code_challenge_methods_supported)
+//   - JWKS validity if jwks_uri is present
+//
+// Security:
+//   - SSRF protection blocks private/loopback issuers unless --allow-private-issuers is set
 func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResult, trace *[]traceEntry, stdout io.Writer) ([]finding, string, authServerMetadataResult) {
 	findings := []finding{}
 	var evidence strings.Builder
