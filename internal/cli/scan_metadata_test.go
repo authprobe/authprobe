@@ -30,7 +30,7 @@ func TestFetchAuthServerMetadataWithPathIssuer(t *testing.T) {
 	})
 
 	trace := []traceEntry{}
-	findings, _, _ := fetchAuthServerMetadata(server.Client(), scanConfig{
+	findings, _, _, _ := fetchAuthServerMetadata(server.Client(), scanConfig{
 		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
 	}, prmResult{
@@ -74,7 +74,7 @@ func TestFetchAuthServerMetadataOIDCAppendFallback(t *testing.T) {
 	})
 
 	trace := []traceEntry{}
-	findings, evidence, _ := fetchAuthServerMetadata(server.Client(), scanConfig{
+	findings, evidence, _, _ := fetchAuthServerMetadata(server.Client(), scanConfig{
 		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
 	}, prmResult{

@@ -64,6 +64,20 @@ func TestAuthServerMetadataMissingTokenEndpoint(t *testing.T) {
 	}
 }
 
+func TestAuthServerMetadataOIDCAppendFallback(t *testing.T) {
+	server := newAuthMetadataOIDCAppendServer(t)
+	defer server.Close()
+
+	report := runScanForServer(t, server.URL+"/mcp")
+
+	if hasFinding(report.Findings, "AUTH_SERVER_METADATA_INVALID") {
+		t.Fatalf("expected no AUTH_SERVER_METADATA_INVALID finding")
+	}
+	if step := findStep(report.Steps, 4); step == nil || step.Status != "PASS" {
+		t.Fatalf("expected step 4 to pass, got %+v", step)
+	}
+}
+
 func newProbeMissingAuthServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -128,7 +142,7 @@ func newAuthMetadataMissingTokenServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
+	server := httptest.NewTLSServer(mux)
 	baseURL := server.URL
 
 	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +174,57 @@ func newAuthMetadataMissingTokenServer(t *testing.T) *httptest.Server {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                 baseURL + "/issuer",
 			"authorization_endpoint": baseURL + "/authorize",
+		})
+	})
+
+	return server
+}
+
+func newAuthMetadataOIDCAppendServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	server := httptest.NewTLSServer(mux)
+	baseURL := server.URL
+	issuer := baseURL + "/issuer"
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{issuer},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{issuer},
+		})
+	})
+
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/.well-known/openid-configuration/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/issuer/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                           issuer,
+			"authorization_endpoint":           baseURL + "/authorize",
+			"token_endpoint":                   baseURL + "/token",
+			"code_challenge_methods_supported": []string{"S256"},
 		})
 	})
 

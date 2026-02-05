@@ -79,14 +79,16 @@ type scanConfig struct {
 }
 
 type scanReport struct {
-	Command        string     `json:"command"`
-	Target         string     `json:"target"`
-	MCPMode        string     `json:"mcp_mode"`
-	RFCMode        string     `json:"rfc_mode"`
-	Timestamp      string     `json:"timestamp"`
-	Steps          []scanStep `json:"steps"`
-	Findings       []finding  `json:"findings"`
-	PrimaryFinding finding    `json:"primary_finding"`
+	Command         string     `json:"command"`
+	Target          string     `json:"target"`
+	MCPMode         string     `json:"mcp_mode"`
+	RFCMode         string     `json:"rfc_mode"`
+	Timestamp       string     `json:"timestamp"`
+	PRMOK           bool       `json:"prm_ok"`
+	AuthzMetadataOK bool       `json:"authz_server_metadata_ok"`
+	Steps           []scanStep `json:"steps"`
+	Findings        []finding  `json:"findings"`
+	PrimaryFinding  finding    `json:"primary_finding"`
 }
 
 type scanStep struct {
@@ -122,6 +124,9 @@ type prmResult struct {
 	AuthorizationServers []string
 	Resource             string
 	MetadataFound        bool
+	PRMOK                bool
+	RootWellKnown404     bool
+	HasPathSuffix        bool
 }
 
 type mcpAuthObservation struct {
@@ -285,6 +290,8 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	var fallbackPRM prmResult
 	fallbackSet := false
 	metadataFound := false
+	prmOK := false
+	rootWellKnown404 := false
 	// Track exact-match candidates so we can prefer a strict match when present.
 	exactMatchFound := false
 	// Gate PRM resource comparison findings on RFC mode (same behavior as other PRM checks).
@@ -323,6 +330,9 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		// RFC 9728 Section 4: The PRM document MUST be available at the well-known endpoint
 		// Only flag 404 as a failure if auth was required from Step 1 (401 response)
 		// If Step 1 returned 405, 404 from PRM just means no OAuth is configured
+		if status == http.StatusNotFound && candidate.Source == "root" {
+			rootWellKnown404 = true
+		}
 		if status == http.StatusNotFound && candidate.Source == "root" && authRequiredFromProbe {
 			findings = append(findings, newFinding("DISCOVERY_ROOT_WELLKNOWN_404", "root PRM endpoint returned 404"))
 		}
@@ -362,6 +372,17 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 			}
 		} else if reportFindings && !hasPathSuffix {
 			findings = append(findings, newFinding("PRM_RESOURCE_MISSING", fmt.Sprintf("%s resource missing", candidate.Source)))
+		}
+		resourceMatches := prm.Resource != "" && canonicalizeResourceURL(prm.Resource) == expectedCanonical
+		if resourceMatches {
+			switch candidate.Source {
+			case "resource_metadata", "path-suffix":
+				prmOK = true
+			case "root":
+				if !hasPathSuffix {
+					prmOK = true
+				}
+			}
 		}
 		if reportFindings {
 			// RFC 8707 Section 2: Resource identifiers MUST NOT include a fragment component
@@ -484,6 +505,9 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 		bestPRM = fallbackPRM
 	}
 	bestPRM.MetadataFound = metadataFound
+	bestPRM.PRMOK = prmOK
+	bestPRM.RootWellKnown404 = rootWellKnown404
+	bestPRM.HasPathSuffix = hasPathSuffix
 	if authRequiredFromProbe && resourceMetadata == "" && len(bestPRM.AuthorizationServers) > 0 {
 		findings = append(findings, newFinding("HEADER_STRIPPED_BY_PROXY_SUSPECTED", "missing WWW-Authenticate; PRM still discoverable"))
 	}
@@ -532,10 +556,11 @@ type authServerMetadataResult struct {
 //
 // Security:
 //   - SSRF protection blocks private/loopback issuers unless --allow-private-issuers is set
-func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResult, trace *[]traceEntry, stdout io.Writer) ([]finding, string, authServerMetadataResult) {
+func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResult, trace *[]traceEntry, stdout io.Writer) ([]finding, string, authServerMetadataResult, bool) {
 	findings := []finding{}
 	var evidence strings.Builder
 	result := authServerMetadataResult{}
+	anySuccess := false
 	for _, issuer := range prm.AuthorizationServers {
 		if issuer == "" {
 			continue
@@ -710,6 +735,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 				result.RegistrationEndpoints = append(result.RegistrationEndpoints, registrationEndpoint)
 			}
 			success = true
+			anySuccess = true
 			if idx > 0 {
 				successViaOIDC = true
 			}
@@ -739,7 +765,7 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 		}
 		findings = append(findings, newFinding("AUTH_SERVER_METADATA_INVALID", fmt.Sprintf("%s metadata discovery failed", issuer)))
 	}
-	return findings, strings.TrimSpace(evidence.String()), result
+	return findings, strings.TrimSpace(evidence.String()), result, anySuccess
 }
 
 func mcpInitializeAndListTools(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer, authRequired bool) (string, string, []finding, *mcpAuthObservation) {

@@ -60,7 +60,9 @@ type funnel struct {
 	resolvedTarget     string
 	authRequired       bool
 	prmResult          prmResult
+	prmOK              bool
 	authMetadata       authServerMetadataResult
+	authzMetadataOK    bool
 	mcpAuthObservation *mcpAuthObservation
 }
 
@@ -237,6 +239,7 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 		return "", "", nil, err
 	}
 	f.prmResult = result
+	f.prmOK = result.PRMOK
 
 	prmSummary := ""
 	if len(result.AuthorizationServers) == 0 {
@@ -253,11 +256,31 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 			evidence = prmSummary
 		}
 	}
+	if result.RootWellKnown404 && result.PRMOK {
+		warn := "WARN: root PRM endpoint 404; resource-specific PRM available; some simplistic clients may fail."
+		if evidence != "" {
+			evidence = evidence + "\n" + warn
+		} else {
+			evidence = warn
+		}
+	}
+	rootRequired := !result.HasPathSuffix
+	for i := range findings {
+		if findings[i].Code == "DISCOVERY_ROOT_WELLKNOWN_404" && !(rootRequired && !result.PRMOK) {
+			findings[i].Severity = "low"
+		}
+	}
+	if f.authRequired && !result.MetadataFound {
+		findings = append(findings, newFinding("OAUTH_DISCOVERY_UNAVAILABLE", "no usable PRM endpoints returned valid metadata"))
+	}
 
 	// If valid PRM found (has authorization_servers), OAuth is configured
 	if len(result.AuthorizationServers) > 0 {
 		f.authRequired = true
 		status := statusFromFindings(findings, true)
+		if !hasSeverityAtLeast(findings, "medium") {
+			status = "PASS"
+		}
 		return status, evidence, findings, nil
 	}
 
@@ -275,13 +298,17 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 
 	// Auth was required (401) but no valid PRM - this is a real failure
 	status := statusFromFindings(findings, true)
+	if !hasSeverityAtLeast(findings, "medium") {
+		status = "PASS"
+	}
 	return status, evidence, findings, nil
 }
 
 // runAuthServerMetadata fetches Authorization Server Metadata (RFC 8414).
 func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
-	findings, evidence, metadata := fetchAuthServerMetadata(f.client, f.config, f.prmResult, &f.trace, f.verboseOutput)
+	findings, evidence, metadata, ok := fetchAuthServerMetadata(f.client, f.config, f.prmResult, &f.trace, f.verboseOutput)
 	f.authMetadata = metadata
+	f.authzMetadataOK = ok
 	status := statusFromFindings(findings, true)
 	return status, evidence, findings, nil
 }
@@ -332,14 +359,16 @@ func (f *funnel) run() error {
 // buildReport constructs the final scan report.
 func (f *funnel) buildReport() scanReport {
 	return scanReport{
-		Command:        f.config.Command,
-		Target:         f.config.Target,
-		MCPMode:        f.config.MCPMode,
-		RFCMode:        f.config.RFCMode,
-		Timestamp:      time.Now().UTC().Format(time.RFC3339),
-		Steps:          f.steps,
-		Findings:       f.findings,
-		PrimaryFinding: choosePrimaryFinding(f.findings),
+		Command:         f.config.Command,
+		Target:          f.config.Target,
+		MCPMode:         f.config.MCPMode,
+		RFCMode:         f.config.RFCMode,
+		Timestamp:       time.Now().UTC().Format(time.RFC3339),
+		PRMOK:           f.prmOK,
+		AuthzMetadataOK: f.authzMetadataOK,
+		Steps:           f.steps,
+		Findings:        f.findings,
+		PrimaryFinding:  choosePrimaryFinding(f.findings),
 	}
 }
 

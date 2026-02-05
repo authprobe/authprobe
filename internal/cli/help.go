@@ -11,6 +11,8 @@ package cli
 
 const scanHelp = `authprobe scan: Diagnose MCP OAuth by running a staged probe (discovery → metadata → token readiness → auth header checks).
 
+Note: For path-based resources, resource-specific PRM (path-suffix) or resource_metadata hints are sufficient for standards-compliant discovery; the root PRM endpoint is a compatibility check.
+
 USAGE:
   authprobe scan <mcp_url> [flags]
 

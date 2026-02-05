@@ -267,6 +267,27 @@ func TestBuildPathSuffixCandidate(t *testing.T) {
 	}
 }
 
+func TestBuildIssuerDiscoveryCandidatesWithPath(t *testing.T) {
+	issuer := "https://login.microsoftonline.com/organizations/v2.0"
+	candidates, err := buildIssuerDiscoveryCandidates(issuer)
+	if err != nil {
+		t.Fatalf("buildIssuerDiscoveryCandidates() unexpected error: %v", err)
+	}
+	want := []string{
+		"https://login.microsoftonline.com/.well-known/oauth-authorization-server/organizations/v2.0",
+		"https://login.microsoftonline.com/.well-known/openid-configuration/organizations/v2.0",
+		"https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration",
+	}
+	if len(candidates) != len(want) {
+		t.Fatalf("buildIssuerDiscoveryCandidates() got %d candidates, want %d", len(candidates), len(want))
+	}
+	for i, candidate := range candidates {
+		if candidate != want[i] {
+			t.Errorf("candidate[%d] = %q, want %q", i, candidate, want[i])
+		}
+	}
+}
+
 func TestBuildRFC8414DiscoveryURL(t *testing.T) {
 	tests := []struct {
 		name   string

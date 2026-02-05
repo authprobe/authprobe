@@ -12,7 +12,101 @@ import (
 
 func TestRootPRM404PathPRM200(t *testing.T) {
 	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
+	server := httptest.NewTLSServer(mux)
+	t.Cleanup(server.Close)
+	baseURL := server.URL
+	issuer := baseURL + "/issuer"
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{issuer},
+		})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 issuer,
+			"authorization_endpoint": baseURL + "/authorize",
+			"token_endpoint":         baseURL + "/token",
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+	})
+
+	report := runScanWithConfigInsecure(t, baseURL+"/mcp", true, "best-effort")
+	finding := findFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404")
+	if finding == nil {
+		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 finding")
+	}
+	if finding.Severity != "low" {
+		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 severity low, got %q", finding.Severity)
+	}
+	if report.PrimaryFinding.Code != "" {
+		t.Fatalf("expected no primary finding, got %q", report.PrimaryFinding.Code)
+	}
+	if !report.PRMOK {
+		t.Fatalf("expected prm_ok to be true")
+	}
+	if step := findStep(report.Steps, 3); step == nil || step.Status != "PASS" {
+		t.Fatalf("expected step 3 to pass, got %+v", step)
+	}
+}
+
+func TestOriginOnlyRootPRM404Fails(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewTLSServer(mux)
+	t.Cleanup(server.Close)
+	baseURL := server.URL
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	report := runScanWithConfigInsecure(t, baseURL, true, "best-effort")
+	finding := findFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404")
+	if finding == nil {
+		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 finding")
+	}
+	if finding.Severity != "high" {
+		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 severity high, got %q", finding.Severity)
+	}
+	if report.PrimaryFinding.Code != "OAUTH_DISCOVERY_UNAVAILABLE" && report.PrimaryFinding.Code != "DISCOVERY_ROOT_WELLKNOWN_404" {
+		t.Fatalf("expected primary finding OAUTH_DISCOVERY_UNAVAILABLE or DISCOVERY_ROOT_WELLKNOWN_404, got %q", report.PrimaryFinding.Code)
+	}
+	if step := findStep(report.Steps, 3); step == nil || step.Status != "FAIL" {
+		t.Fatalf("expected step 3 to fail, got %+v", step)
+	}
+}
+
+func TestAllPRMEndpointsFail(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewTLSServer(mux)
 	t.Cleanup(server.Close)
 	baseURL := server.URL
 
@@ -22,21 +116,22 @@ func TestRootPRM404PathPRM200(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, baseURL))
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"resource": baseURL + "/mcp",
-		})
+		w.WriteHeader(http.StatusNotFound)
 	})
 
-	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
-	if !hasFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404") {
-		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 finding")
+	report := runScanWithConfigInsecure(t, baseURL+"/mcp", true, "best-effort")
+	if !hasFinding(report.Findings, "OAUTH_DISCOVERY_UNAVAILABLE") {
+		t.Fatalf("expected OAUTH_DISCOVERY_UNAVAILABLE finding")
+	}
+	if report.PrimaryFinding.Code != "OAUTH_DISCOVERY_UNAVAILABLE" {
+		t.Fatalf("expected primary finding OAUTH_DISCOVERY_UNAVAILABLE, got %q", report.PrimaryFinding.Code)
 	}
 	if step := findStep(report.Steps, 3); step == nil || step.Status != "FAIL" {
 		t.Fatalf("expected step 3 to fail, got %+v", step)
@@ -379,8 +474,23 @@ func runScanWithConfig(t *testing.T, target string, allowPrivate bool, rfcMode s
 	if err != nil {
 		t.Fatalf("runScanFunnel error: %v", err)
 	}
-	if report.PrimaryFinding.Code == "" {
-		t.Fatalf("expected a primary finding, got none")
+	return report
+}
+
+func runScanWithConfigInsecure(t *testing.T, target string, allowPrivate bool, rfcMode string) scanReport {
+	t.Helper()
+	var stdout bytes.Buffer
+	var verbose bytes.Buffer
+	report, _, err := runScanFunnel(scanConfig{
+		Target:              target,
+		Timeout:             5 * time.Second,
+		MCPMode:             "best-effort",
+		RFCMode:             rfcMode,
+		AllowPrivateIssuers: allowPrivate,
+		Insecure:            true,
+	}, &stdout, &verbose)
+	if err != nil {
+		t.Fatalf("runScanFunnel error: %v", err)
 	}
 	return report
 }

@@ -105,9 +105,6 @@ func runScanForServer(t *testing.T, target string) scanReport {
 	if err != nil {
 		t.Fatalf("runScanFunnel error: %v", err)
 	}
-	if report.PrimaryFinding.Code == "" {
-		t.Fatalf("expected a primary finding, got none")
-	}
 	return report
 }
 
@@ -118,6 +115,15 @@ func hasFinding(findings []finding, code string) bool {
 		}
 	}
 	return false
+}
+
+func findFinding(findings []finding, code string) *finding {
+	for i := range findings {
+		if findings[i].Code == code {
+			return &findings[i]
+		}
+	}
+	return nil
 }
 
 func findStep(steps []scanStep, id int) *scanStep {

@@ -227,6 +227,20 @@ func hasHighSeverity(findings []finding) bool {
 	return false
 }
 
+// hasSeverityAtLeast checks if any finding meets or exceeds the requested severity.
+func hasSeverityAtLeast(findings []finding, severity string) bool {
+	threshold := severityRank(strings.ToLower(severity))
+	if threshold == 0 {
+		return false
+	}
+	for _, f := range findings {
+		if severityRank(f.Severity) >= threshold {
+			return true
+		}
+	}
+	return false
+}
+
 // supportsPing checks if capabilities indicate ping support.
 func supportsPing(capabilities map[string]any) bool {
 	if capabilities == nil {
@@ -543,6 +557,7 @@ func buildIssuerDiscoveryCandidates(issuer string) ([]string, error) {
 	if parsed.RawQuery != "" {
 		return nil, errIssuerQueryFragment
 	}
+	parsed.Fragment = ""
 	if !parsed.IsAbs() {
 		return nil, errIssuerNotAbsolute
 	}
@@ -909,7 +924,9 @@ func findingRFCExplanation(code string) string {
 	case "AUTH_REQUIRED_BUT_NOT_ADVERTISED":
 		return "Auth appears required but OAuth discovery was not advertised. Next steps: add WWW-Authenticate + PRM for OAuth/MCP discovery, or document the required non-OAuth auth (e.g., SigV4)."
 	case "DISCOVERY_ROOT_WELLKNOWN_404":
-		return "RFC 9728 defines the root /.well-known/oauth-protected-resource endpoint for PRM discovery."
+		return "RFC 9728 defines the root /.well-known/oauth-protected-resource endpoint; for path-based resources, the path-suffix PRM or resource_metadata hint is sufficient for standards-compliant discovery."
+	case "OAUTH_DISCOVERY_UNAVAILABLE":
+		return "OAuth discovery failed because no PRM endpoint returned valid metadata for this resource."
 	case "PRM_MISSING_AUTHORIZATION_SERVERS":
 		return "RFC 9728 requires authorization_servers in protected resource metadata for OAuth discovery."
 	case "PRM_RESOURCE_MISMATCH":
@@ -945,7 +962,7 @@ func findingRFCExplanation(code string) string {
 	case "AUTH_SERVER_METADATA_UNREACHABLE":
 		return "Authorization server metadata should be retrievable at RFC 8414 or OIDC discovery well-known locations."
 	case "AUTH_SERVER_METADATA_INVALID":
-		return "RFC 8414 defines required metadata fields such as issuer, authorization_endpoint, and token_endpoint."
+		return "RFC 8414 and OIDC discovery define required metadata fields such as issuer, authorization_endpoint, and token_endpoint."
 	case "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED":
 		return "Issuer metadata resolution was blocked by local policy for private or disallowed addresses."
 	case "HEADER_STRIPPED_BY_PROXY_SUSPECTED":
@@ -1045,6 +1062,7 @@ func findingSeverity(code string) string {
 	case "DISCOVERY_NO_WWW_AUTHENTICATE",
 		"AUTH_REQUIRED_BUT_NOT_ADVERTISED",
 		"DISCOVERY_ROOT_WELLKNOWN_404",
+		"OAUTH_DISCOVERY_UNAVAILABLE",
 		"PRM_MISSING_AUTHORIZATION_SERVERS",
 		"PRM_RESOURCE_MISMATCH",
 		"PRM_JWKS_URI_NOT_HTTPS",
@@ -1148,8 +1166,17 @@ func choosePrimaryFinding(findings []finding) finding {
 	if len(findings) == 0 {
 		return finding{}
 	}
-	sorted := make([]finding, len(findings))
-	copy(sorted, findings)
+	var candidates []finding
+	for _, item := range findings {
+		if severityRank(item.Severity) >= severityRank("high") {
+			candidates = append(candidates, item)
+		}
+	}
+	if len(candidates) == 0 {
+		return finding{}
+	}
+	sorted := make([]finding, len(candidates))
+	copy(sorted, candidates)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		si := severityRank(sorted[i].Severity)
 		sj := severityRank(sorted[j].Severity)
