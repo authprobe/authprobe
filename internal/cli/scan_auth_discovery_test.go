@@ -58,6 +58,41 @@ func TestNoAuthRequiredDoesNotTriggerAuthFinding(t *testing.T) {
 	}
 }
 
+func TestDiscoveryNoWWWAuthenticateButPRMAvailable(t *testing.T) {
+	server := newSentryLikeServer(t)
+	defer server.Close()
+
+	report := runScanForServer(t, server.URL+"/mcp")
+
+	if hasFinding(report.Findings, "AUTH_REQUIRED_BUT_NOT_ADVERTISED") {
+		t.Fatalf("did not expect AUTH_REQUIRED_BUT_NOT_ADVERTISED when PRM is available")
+	}
+	finding := findFinding(report.Findings, "DISCOVERY_NO_WWW_AUTHENTICATE")
+	if finding == nil {
+		t.Fatalf("expected DISCOVERY_NO_WWW_AUTHENTICATE finding")
+	}
+	if finding.Severity != "low" {
+		t.Fatalf("expected DISCOVERY_NO_WWW_AUTHENTICATE severity low, got %q", finding.Severity)
+	}
+	if report.PrimaryFinding.Code != "" {
+		t.Fatalf("expected no primary finding, got %q", report.PrimaryFinding.Code)
+	}
+}
+
+func TestDiscoveryNoWWWAuthenticateDeadEnd(t *testing.T) {
+	server := newDeadEndDiscoveryServer(t)
+	defer server.Close()
+
+	report := runScanForServer(t, server.URL+"/mcp")
+
+	if report.PrimaryFinding.Code != "AUTH_REQUIRED_BUT_NOT_ADVERTISED" {
+		t.Fatalf("expected primary finding AUTH_REQUIRED_BUT_NOT_ADVERTISED, got %q", report.PrimaryFinding.Code)
+	}
+	if !hasFinding(report.Findings, "AUTH_REQUIRED_BUT_NOT_ADVERTISED") {
+		t.Fatalf("expected AUTH_REQUIRED_BUT_NOT_ADVERTISED finding")
+	}
+}
+
 func newAuthRequiredNoDiscoveryServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -188,6 +223,81 @@ func newNoAuthServer(t *testing.T) *httptest.Server {
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
+	})
+
+	return httptest.NewServer(mux)
+}
+
+func newSentryLikeServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	server := httptest.NewTLSServer(mux)
+	baseURL := server.URL
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      1,
+			"error": map[string]any{
+				"code":    -32001,
+				"message": "Unauthorized",
+			},
+		})
+	})
+
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"resource":              baseURL + "/mcp",
+			"authorization_servers": []string{baseURL + "/issuer"},
+		})
+	})
+
+	mux.HandleFunc("/.well-known/oauth-authorization-server/issuer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 baseURL + "/issuer",
+			"authorization_endpoint": baseURL + "/authorize",
+			"token_endpoint":         baseURL + "/token",
+			"registration_endpoint":  baseURL + "/register",
+			"code_challenge_methods_supported": []string{
+				"S256",
+			},
+		})
+	})
+
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	return server
+}
+
+func newDeadEndDiscoveryServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
 	})
 
 	return httptest.NewServer(mux)

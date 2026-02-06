@@ -61,6 +61,7 @@ type funnel struct {
 	authRequired       bool
 	prmResult          prmResult
 	prmOK              bool
+	oauthDiscoveryOK   bool
 	authMetadata       authServerMetadataResult
 	authzMetadataOK    bool
 	mcpAuthObservation *mcpAuthObservation
@@ -240,6 +241,7 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 	}
 	f.prmResult = result
 	f.prmOK = result.PRMOK
+	f.oauthDiscoveryOK = result.OAuthDiscovery
 
 	prmSummary := ""
 	if len(result.AuthorizationServers) == 0 {
@@ -273,6 +275,18 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 	if f.authRequired && !result.MetadataFound {
 		findings = append(findings, newFinding("OAUTH_DISCOVERY_UNAVAILABLE", "no usable PRM endpoints returned valid metadata"))
 	}
+	if f.authRequired && f.resourceMetadata == "" {
+		if f.oauthDiscoveryOK {
+			findings = append(findings, newFindingWithSeverity("DISCOVERY_NO_WWW_AUTHENTICATE", "missing WWW-Authenticate/resource_metadata; discovery still possible via RFC 9728 inserted-path PRM", "low"))
+		} else if f.mcpAuthObservation != nil && !f.mcpAuthObservation.WWWAuthenticatePresent {
+			findings = append(findings, buildAuthDiscoveryUnavailableFinding(*f.mcpAuthObservation, evidence))
+		} else {
+			findings = append(findings, newFindingWithEvidence("AUTH_REQUIRED_BUT_NOT_ADVERTISED", []string{
+				"401/403 without WWW-Authenticate/resource_metadata",
+				"no PRM endpoints returned valid metadata",
+			}))
+		}
+	}
 
 	// If valid PRM found (has authorization_servers), OAuth is configured
 	if len(result.AuthorizationServers) > 0 {
@@ -282,10 +296,6 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 			status = "PASS"
 		}
 		return status, evidence, findings, nil
-	}
-
-	if f.authRequired && f.mcpAuthObservation != nil && !f.mcpAuthObservation.WWWAuthenticatePresent {
-		findings = append(findings, buildAuthDiscoveryUnavailableFinding(*f.mcpAuthObservation, evidence))
 	}
 
 	// No valid PRM found - if auth isn't required, note missing OAuth config but keep status FAIL for unusable PRM.
@@ -365,6 +375,7 @@ func (f *funnel) buildReport() scanReport {
 		RFCMode:         f.config.RFCMode,
 		Timestamp:       time.Now().UTC().Format(time.RFC3339),
 		PRMOK:           f.prmOK,
+		OAuthDiscovery:  f.oauthDiscoveryOK,
 		AuthzMetadataOK: f.authzMetadataOK,
 		Steps:           f.steps,
 		Findings:        f.findings,

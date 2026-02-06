@@ -566,16 +566,10 @@ func TestProbeMCP_401WithoutResourceMetadata(t *testing.T) {
 		t.Errorf("summary: got %q, want %q", summary, "missing WWW-Authenticate/resource_metadata")
 	}
 
-	// Should have a finding about missing resource_metadata
-	found := false
 	for _, f := range findings {
 		if f.Code == "DISCOVERY_NO_WWW_AUTHENTICATE" {
-			found = true
-			break
+			t.Error("unexpected DISCOVERY_NO_WWW_AUTHENTICATE finding")
 		}
-	}
-	if !found {
-		t.Error("expected DISCOVERY_NO_WWW_AUTHENTICATE finding")
 	}
 }
 

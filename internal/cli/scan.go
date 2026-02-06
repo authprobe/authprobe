@@ -85,6 +85,7 @@ type scanReport struct {
 	RFCMode         string     `json:"rfc_mode"`
 	Timestamp       string     `json:"timestamp"`
 	PRMOK           bool       `json:"prm_ok"`
+	OAuthDiscovery  bool       `json:"oauth_discovery_viable"`
 	AuthzMetadataOK bool       `json:"authz_server_metadata_ok"`
 	Steps           []scanStep `json:"steps"`
 	Findings        []finding  `json:"findings"`
@@ -127,6 +128,7 @@ type prmResult struct {
 	PRMOK                bool
 	RootWellKnown404     bool
 	HasPathSuffix        bool
+	OAuthDiscovery       bool
 }
 
 type mcpAuthObservation struct {
@@ -228,7 +230,6 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	// "resource_metadata" parameter pointing to the OAuth Protected Resource Metadata URL.
 	// This enables clients to discover how to obtain authorization.
 	if !ok {
-		findings = append(findings, newFinding("DISCOVERY_NO_WWW_AUTHENTICATE", "missing resource_metadata in WWW-Authenticate"))
 		return "", resolvedTarget(resp, config.Target), findings, "missing WWW-Authenticate/resource_metadata", true, nil
 	}
 	// Success: we have a 401 with resource_metadata, indicating proper MCP OAuth discovery
@@ -508,6 +509,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	bestPRM.PRMOK = prmOK
 	bestPRM.RootWellKnown404 = rootWellKnown404
 	bestPRM.HasPathSuffix = hasPathSuffix
+	bestPRM.OAuthDiscovery = metadataFound
 	if authRequiredFromProbe && resourceMetadata == "" && len(bestPRM.AuthorizationServers) > 0 {
 		findings = append(findings, newFinding("HEADER_STRIPPED_BY_PROXY_SUSPECTED", "missing WWW-Authenticate; PRM still discoverable"))
 	}

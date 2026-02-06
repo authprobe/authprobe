@@ -14,11 +14,11 @@ func TestMCPProbeMissingWWWAuthenticate(t *testing.T) {
 
 	report := runScanForServer(t, server.URL+"/mcp")
 
-	if !hasFinding(report.Findings, "DISCOVERY_NO_WWW_AUTHENTICATE") {
-		t.Fatalf("expected DISCOVERY_NO_WWW_AUTHENTICATE finding")
+	if !hasFinding(report.Findings, "AUTH_REQUIRED_BUT_NOT_ADVERTISED") {
+		t.Fatalf("expected AUTH_REQUIRED_BUT_NOT_ADVERTISED finding")
 	}
-	if step := findStep(report.Steps, 1); step == nil || step.Status != "FAIL" {
-		t.Fatalf("expected step 1 to fail, got %+v", step)
+	if step := findStep(report.Steps, 3); step == nil || step.Status != "FAIL" {
+		t.Fatalf("expected step 3 to fail, got %+v", step)
 	}
 }
 
