@@ -49,7 +49,7 @@ import (
 type funnel struct {
 	client        *http.Client
 	config        scanConfig
-	trace         []traceEntry
+	trace         []traceEntry // HTTP request/response log for evidence collection and debugging
 	stdout        io.Writer
 	verboseOutput io.Writer
 
