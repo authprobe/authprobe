@@ -74,6 +74,7 @@ type scanConfig struct {
 	Redact              bool
 	JSONPath            string
 	MDPath              string
+	TraceASCIIPath      string
 	BundlePath          string
 	OutputDir           string
 }
@@ -114,11 +115,14 @@ type scanSummary struct {
 }
 
 type traceEntry struct {
-	Timestamp string            `json:"ts"`
-	Method    string            `json:"method"`
-	URL       string            `json:"url"`
-	Status    int               `json:"status"`
-	Headers   map[string]string `json:"headers,omitempty"`
+	Timestamp       string            `json:"ts"`
+	Method          string            `json:"method"`
+	URL             string            `json:"url"`
+	Status          int               `json:"status"`
+	StatusLine      string            `json:"status_line,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
 }
 
 type prmResult struct {

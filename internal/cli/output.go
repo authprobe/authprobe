@@ -35,8 +35,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -320,6 +323,7 @@ func writeOutputs(report scanReport, summary scanSummary, config scanConfig) err
 	outputDir := config.OutputDir
 	jsonPath := resolveOutputPath(config.JSONPath, outputDir)
 	mdPath := resolveOutputPath(config.MDPath, outputDir)
+	traceASCIIPath := resolveOutputPath(config.TraceASCIIPath, outputDir)
 	bundlePath := resolveOutputPath(config.BundlePath, outputDir)
 
 	if config.JSONPath == "-" {
@@ -334,11 +338,27 @@ func writeOutputs(report scanReport, summary scanSummary, config scanConfig) err
 			return err
 		}
 	}
-	if mdPath != "" {
+	if config.MDPath == "-" {
+		if _, err := os.Stdout.Write([]byte(summary.MD)); err != nil {
+			return err
+		}
+	} else if mdPath != "" {
 		if err := ensureParentDir(mdPath); err != nil {
 			return err
 		}
 		if err := os.WriteFile(mdPath, []byte(summary.MD), 0o644); err != nil {
+			return err
+		}
+	}
+	if config.TraceASCIIPath == "-" {
+		if _, err := os.Stdout.Write([]byte(buildTraceASCII(summary.Trace))); err != nil {
+			return err
+		}
+	} else if traceASCIIPath != "" {
+		if err := ensureParentDir(traceASCIIPath); err != nil {
+			return err
+		}
+		if err := os.WriteFile(traceASCIIPath, []byte(buildTraceASCII(summary.Trace)), 0o644); err != nil {
 			return err
 		}
 	}
@@ -385,6 +405,10 @@ func writeBundle(path string, summary scanSummary) error {
 	if err := writeZipFile(zipWriter, "trace.jsonl", traceBytes); err != nil {
 		return err
 	}
+	traceASCII := buildTraceASCII(summary.Trace)
+	if err := writeZipFile(zipWriter, "trace.txt", []byte(traceASCII)); err != nil {
+		return err
+	}
 	meta := map[string]string{
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 	}
@@ -417,6 +441,152 @@ func buildTraceJSONL(entries []traceEntry) []byte {
 		buffer.WriteByte('\n')
 	}
 	return buffer.Bytes()
+}
+
+// buildTraceASCII converts trace entries into an ASCII call trace.
+func buildTraceASCII(entries []traceEntry) string {
+	var out strings.Builder
+	out.WriteString("Call Trace Using https://github.com/authprobe/authprobe\n\n")
+	if len(entries) == 0 {
+		out.WriteString("(no trace entries)\n")
+		return out.String()
+	}
+	out.WriteString("  ┌────────────┐                                                    ┌────────────┐    \n")
+	out.WriteString("  │ authprobe  │                                                    │ MCP Server │    \n")
+	out.WriteString("  └─────┬──────┘                                                    └─────┬──────┘    \n")
+	out.WriteString("        │                                                                 │           \n")
+
+	mcpHost, authHost := traceHosts(entries)
+	currentStep := ""
+	for i, entry := range entries {
+		step := traceStep(entry, mcpHost, authHost)
+		if step != currentStep {
+			currentStep = step
+			if currentStep != "" {
+				writeTraceStepBanner(&out, currentStep)
+			}
+		}
+		fullURL := entry.URL
+		if parsed, err := url.Parse(entry.URL); err == nil {
+			if parsed.String() != "" {
+				fullURL = parsed.String()
+			}
+		}
+		statusLine := entry.StatusLine
+		if statusLine == "" && entry.Status != 0 {
+			statusLine = fmt.Sprintf("%d", entry.Status)
+		}
+		targetColumn := "MCP"
+		if authHost != "" && hostFromURL(entry.URL) == authHost {
+			targetColumn = "AUTH"
+		}
+		requestLine := fmt.Sprintf("%s %s", entry.Method, fullURL)
+		responseLine := fmt.Sprintf("%s", statusLine)
+		if targetColumn == "AUTH" {
+			writeTraceLine(&out, requestLine)
+			writeTraceHeaderLines(&out, entry.RequestHeaders)
+			fmt.Fprintf(&out, "        ├──────────────────────────────────────────────────────────────────┼─►│\n")
+			writeTraceLine(&out, responseLine)
+			writeTraceHeaderLines(&out, entry.ResponseHeaders)
+			fmt.Fprintf(&out, "        │◄─────────────────────────────────────────────────────────────────┼  ┤\n")
+		} else {
+			writeTraceLine(&out, requestLine)
+			writeTraceHeaderLines(&out, entry.RequestHeaders)
+			fmt.Fprintf(&out, "        ├─────────────────────────────────────────────────────────────────►│\n")
+			writeTraceLine(&out, responseLine)
+			writeTraceHeaderLines(&out, entry.ResponseHeaders)
+			fmt.Fprintf(&out, "        │◄─────────────────────────────────────────────────────────────────┤\n")
+		}
+		if i < len(entries)-1 {
+			out.WriteString("        │                                                                    │  │\n")
+		}
+	}
+	out.WriteString("        ▼                                                                  ▼\n")
+	return out.String()
+}
+
+const traceLineWidth = 62
+const traceStepWidth = 36
+
+func writeTraceLine(out *strings.Builder, content string) {
+	fmt.Fprintf(out, "        │  %-*s\n", traceLineWidth, content)
+}
+
+func writeTraceStepBanner(out *strings.Builder, step string) {
+	fmt.Fprintf(out, "        │ ╔═══ %-*s ═══════╪══════════════════════════════════╗\n", traceStepWidth, step)
+}
+
+func writeTraceHeaderLines(out *strings.Builder, headers map[string]string) {
+	if len(headers) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(headers))
+	maxKeyLen := 0
+	for key := range headers {
+		keys = append(keys, key)
+		if len(key) > maxKeyLen {
+			maxKeyLen = len(key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(out, "        │    %-*s  %s\n", maxKeyLen+1, key+":", headers[key])
+	}
+}
+
+func traceHosts(entries []traceEntry) (string, string) {
+	if len(entries) == 0 {
+		return "", ""
+	}
+	mcpHost := hostFromURL(entries[0].URL)
+	authHost := ""
+	for _, entry := range entries[1:] {
+		host := hostFromURL(entry.URL)
+		if host != "" && host != mcpHost {
+			authHost = host
+			break
+		}
+	}
+	return mcpHost, authHost
+}
+
+func hostFromURL(raw string) string {
+	if parsed, err := url.Parse(raw); err == nil {
+		return parsed.Host
+	}
+	return ""
+}
+
+func traceStep(entry traceEntry, mcpHost string, authHost string) string {
+	parsed, err := url.Parse(entry.URL)
+	if err != nil {
+		return ""
+	}
+	path := parsed.Path
+	if strings.Contains(path, ".well-known/oauth-protected-resource") {
+		return "Step 3: PRM Discovery"
+	}
+	if strings.Contains(path, ".well-known/oauth-authorization-server") || strings.Contains(path, ".well-known/openid-configuration") {
+		return "Step 4: Auth Server Metadata"
+	}
+	if strings.Contains(path, "/token") && entry.Method == http.MethodPost {
+		return "Step 5: Token Readiness"
+	}
+	if strings.Contains(path, "/register") && entry.Method == http.MethodPost {
+		return "Step 6: DCR"
+	}
+	if parsed.Host == mcpHost {
+		if entry.Method == http.MethodGet {
+			return "Step 1: MCP probe"
+		}
+		if entry.Method == http.MethodPost {
+			return "Step 2: MCP initialize"
+		}
+	}
+	if authHost != "" && parsed.Host == authHost {
+		return "Step 4: Auth Server Metadata"
+	}
+	return "Step 2: MCP initialize"
 }
 
 // ensureParentDir creates the parent directory for a file path if it doesn't exist.

@@ -211,13 +211,16 @@ func TestScanFlagParsing(t *testing.T) {
 		},
 		{
 			name: "output flags",
-			args: []string{"--json", "out.json", "--md", "out.md", "--bundle", "out.zip", "https://example.com/mcp"},
+			args: []string{"--json", "out.json", "--md", "out.md", "--trace-ascii", "trace.txt", "--bundle", "out.zip", "https://example.com/mcp"},
 			validate: func(t *testing.T, fs *flag.FlagSet) {
 				if v := fs.Lookup("json").Value.String(); v != "out.json" {
 					t.Errorf("json: got %q, want %q", v, "out.json")
 				}
 				if v := fs.Lookup("md").Value.String(); v != "out.md" {
 					t.Errorf("md: got %q, want %q", v, "out.md")
+				}
+				if v := fs.Lookup("trace-ascii").Value.String(); v != "trace.txt" {
+					t.Errorf("trace-ascii: got %q, want %q", v, "trace.txt")
 				}
 				if v := fs.Lookup("bundle").Value.String(); v != "out.zip" {
 					t.Errorf("bundle: got %q, want %q", v, "out.zip")
@@ -289,6 +292,7 @@ func TestScanFlagParsing(t *testing.T) {
 			fs.String("fail-on", "high", "")
 			fs.String("json", "", "")
 			fs.String("md", "", "")
+			fs.String("trace-ascii", "", "")
 			fs.String("bundle", "", "")
 			fs.String("output-dir", "", "")
 			verbose := fs.Bool("verbose", false, "")

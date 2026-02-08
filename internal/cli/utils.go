@@ -1207,13 +1207,28 @@ func severityRank(severity string) int {
 
 // addTrace adds an HTTP request/response to the trace log.
 func addTrace(trace *[]traceEntry, req *http.Request, resp *http.Response, redact bool) {
-	*trace = append(*trace, traceEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		Method:    req.Method,
-		URL:       req.URL.String(),
-		Status:    resp.StatusCode,
-		Headers:   sanitizeHeadersForTrace(resp.Header, redact),
-	})
+	entry := traceEntry{
+		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+		Method:          req.Method,
+		URL:             req.URL.String(),
+		Status:          resp.StatusCode,
+		StatusLine:      resp.Status,
+		Headers:         sanitizeHeadersForTrace(resp.Header, redact),
+		RequestHeaders:  sanitizeRequestHeadersForTrace(req, redact),
+		ResponseHeaders: sanitizeHeadersForTrace(resp.Header, redact),
+	}
+	*trace = append(*trace, entry)
+}
+
+func sanitizeRequestHeadersForTrace(req *http.Request, redact bool) map[string]string {
+	if req == nil {
+		return nil
+	}
+	headers := req.Header.Clone()
+	if req.Host != "" && headers.Get("Host") == "" {
+		headers.Set("Host", req.Host)
+	}
+	return sanitizeHeadersForTrace(headers, redact)
 }
 
 // shouldFail determines if the scan should exit with failure based on findings.

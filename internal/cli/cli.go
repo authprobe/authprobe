@@ -89,6 +89,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.String("fail-on", "high", "")
 	fs.String("json", "", "")
 	fs.String("md", "", "")
+	fs.String("trace-ascii", "", "")
 	fs.String("bundle", "", "")
 	fs.String("output-dir", "", "")
 	noRedact := fs.Bool("no-redact", false, "")
@@ -132,6 +133,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Redact:              !*noRedact,
 		JSONPath:            fs.Lookup("json").Value.String(),
 		MDPath:              fs.Lookup("md").Value.String(),
+		TraceASCIIPath:      fs.Lookup("trace-ascii").Value.String(),
 		BundlePath:          fs.Lookup("bundle").Value.String(),
 		OutputDir:           fs.Lookup("output-dir").Value.String(),
 	}
@@ -200,7 +202,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	}
 
 	scanStdout := stdout
-	if isStdoutPath(config.JSONPath) {
+	if isStdoutPath(config.JSONPath) || isStdoutPath(config.MDPath) || isStdoutPath(config.TraceASCIIPath) {
 		scanStdout = io.Discard
 	}
 	verboseWriter := scanStdout

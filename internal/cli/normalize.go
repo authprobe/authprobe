@@ -21,6 +21,7 @@ func normalizeScanArgs(args []string) []string {
 		"--fail-on":     {},
 		"--json":        {},
 		"--md":          {},
+		"--trace-ascii": {},
 		"--bundle":      {},
 		"--output-dir":  {},
 		"-d":            {},

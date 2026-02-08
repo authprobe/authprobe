@@ -47,6 +47,7 @@ FLAGS:
 OUTPUTS:
       --json <path>        Write structured JSON report to file. Use "-" for stdout.
       --md <path>          Write Markdown report to file. Use "-" for stdout.
+      --trace-ascii <path> Write ASCII call trace to file. Use "-" for stdout.
       --bundle <path>      Write sanitized evidence bundle (zip) to file.
       --output-dir <dir>   Write all requested outputs into a directory.
 
