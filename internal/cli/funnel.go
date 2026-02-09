@@ -201,7 +201,22 @@ func (f *funnel) updateProbeDetailForAuth() {
 
 // Step execution methods
 
-// runMCPProbe probes the MCP endpoint with GET to check for 401 + WWW-Authenticate with resource_metadata.
+// runMCPProbe probes the MCP endpoint with GET to check for 401 + WWW-Authenticate - Step 1.
+//
+// Inputs (from funnel state):
+//   - f.config.Target: MCP endpoint URL to probe
+//   - f.config.Headers: Custom headers to include in request
+//
+// Outputs:
+//   - status: "PASS"/"FAIL"/"SKIP" based on findings and auth status
+//   - detail: Human-readable summary (e.g., "401 with resource_metadata", "probe returned 405")
+//   - findings: MCP compliance issues (MCP_GET_NOT_SSE, DISCOVERY_NO_WWW_AUTHENTICATE, etc.)
+//   - error: Non-nil only for fatal errors (network failure, invalid URL)
+//
+// Side effects (funnel fields set):
+//   - f.resourceMetadata: URL from WWW-Authenticate resource_metadata param (for Step 3)
+//   - f.resolvedTarget: Final URL after redirects (for constructing PRM URLs)
+//   - f.authRequired: true if 401 received, false if 405/200 (may be updated by Step 2/3)
 func (f *funnel) runMCPProbe() (string, string, []finding, error) {
 	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(f.client, f.config, &f.trace, f.verboseOutput)
 	if err != nil {
@@ -214,7 +229,22 @@ func (f *funnel) runMCPProbe() (string, string, []finding, error) {
 	return status, evidence, findings, nil
 }
 
-// runMCPInitialize performs MCP JSON-RPC initialize handshake and tools/list.
+// runMCPInitialize performs MCP JSON-RPC initialize handshake and tools/list - Step 2.
+//
+// Inputs (from funnel state):
+//   - f.config.Target: MCP endpoint URL for POST requests
+//   - f.authRequired: Current auth status from Step 1 (affects ordering check)
+//
+// Outputs:
+//   - status: "PASS" if initialize succeeds, "FAIL" on errors, "SKIP" if auth blocks
+//   - detail: Evidence summary (initialize -> 200, tools/list -> 200, tool names)
+//   - findings: MCP compliance issues (MCP_INITIALIZE_ORDERING_NOT_ENFORCED, etc.)
+//   - error: Non-nil only for fatal errors
+//
+// Side effects (funnel fields set):
+//   - f.authRequired: Updated to true if POST returns 401/403 (late auth discovery)
+//   - f.mcpAuthObservation: Stored if 401 received without WWW-Authenticate header
+//   - f.steps[0].Detail: Updated via updateProbeDetailForAuth() if auth discovered late
 func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
 	status, detail, findings, authObservation := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
 	// Handle late auth discovery: Step 1 may return 405 (method not allowed) but Step 2
@@ -232,9 +262,23 @@ func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
 	return status, detail, findings, nil
 }
 
-// runPRMFetch fetches OAuth Protected Resource Metadata (RFC 9728).
-// If valid PRM is found (has authorization_servers), sets authRequired = true.
-// This allows OAuth discovery to continue even if Step 1 returned 405.
+// runPRMFetch fetches OAuth Protected Resource Metadata (RFC 9728) - Step 3.
+//
+// Inputs (from funnel state):
+//   - f.resourceMetadata: URL from WWW-Authenticate resource_metadata (may be empty)
+//   - f.resolvedTarget: Target URL after redirects from Step 1
+//   - f.authRequired: Current auth status from Steps 1-2
+//
+// Outputs:
+//   - status: "PASS" if PRM found, step status based on findings otherwise
+//   - detail: Evidence summary (URLs probed and HTTP status codes)
+//   - findings: RFC compliance issues (PRM_RESOURCE_MISMATCH, etc.)
+//   - error: Non-nil only for fatal errors
+//
+// Side effects:
+//   - Sets f.prmResult with authorization_servers for Step 4
+//   - Sets f.authRequired = true if valid PRM found (enables OAuth discovery)
+//   - Sets f.prmOK and f.oauthDiscoveryOK for status tracking
 func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 	result, findings, evidence, err := fetchPRMMatrix(f.client, f.config, f.resourceMetadata, f.resolvedTarget, &f.trace, f.verboseOutput, f.authRequired)
 	if err != nil {
@@ -315,7 +359,20 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 	return status, evidence, findings, nil
 }
 
-// runAuthServerMetadata fetches Authorization Server Metadata (RFC 8414).
+// runAuthServerMetadata fetches Authorization Server Metadata (RFC 8414) - Step 4.
+//
+// Inputs (from funnel state):
+//   - f.prmResult.AuthorizationServers: Issuer URLs from Step 3 PRM
+//
+// Outputs:
+//   - status: "PASS" if metadata valid, "FAIL" on RFC violations
+//   - detail: Evidence summary (metadata URLs and HTTP status codes)
+//   - findings: RFC 8414 issues (AUTH_SERVER_ISSUER_MISMATCH, AUTH_SERVER_PKCE_S256_MISSING, etc.)
+//   - error: Always nil (errors are captured as findings)
+//
+// Side effects (funnel fields set):
+//   - f.authMetadata: Contains TokenEndpoints and RegistrationEndpoints for Steps 5-6
+//   - f.authzMetadataOK: true if at least one auth server metadata was successfully fetched
 func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
 	findings, evidence, metadata, ok := fetchAuthServerMetadata(f.client, f.config, f.prmResult, &f.trace, f.verboseOutput)
 	f.authMetadata = metadata
@@ -324,14 +381,36 @@ func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
 	return status, evidence, findings, nil
 }
 
-// runTokenEndpoint probes token endpoints with empty POST.
+// runTokenEndpoint probes token endpoints with empty POST - Step 5.
+//
+// Inputs (from funnel state):
+//   - f.authMetadata.TokenEndpoints: Token endpoint URLs from Step 4
+//
+// Outputs:
+//   - status: "PASS" if endpoints respond, "FAIL" on errors
+//   - detail: Evidence summary (endpoint URLs and HTTP status codes)
+//   - findings: Token endpoint issues (TOKEN_RESPONSE_NOT_JSON_RISK, TOKEN_HTTP200_ERROR_PAYLOAD_RISK)
+//   - error: Always nil (errors are captured as findings)
+//
+// Side effects: None (read-only probe)
 func (f *funnel) runTokenEndpoint() (string, string, []finding, error) {
 	findings, evidence := probeTokenEndpointReadiness(f.client, f.config, f.authMetadata.TokenEndpoints, &f.trace, f.verboseOutput)
 	status := statusFromFindings(findings, true)
 	return status, evidence, findings, nil
 }
 
-// runDCRProbe probes Dynamic Client Registration endpoints (RFC 7591).
+// runDCRProbe probes Dynamic Client Registration endpoints (RFC 7591) - Step 6.
+//
+// Inputs (from funnel state):
+//   - f.authMetadata.RegistrationEndpoints: DCR endpoint URLs from Step 4
+//
+// Outputs:
+//   - status: "PASS" if endpoints are protected, "FAIL" if security issues found
+//   - detail: Evidence summary (endpoint URLs, HTTP status, open/protected status)
+//   - findings: DCR security issues (DCR_ENDPOINT_OPEN, DCR_HTTP_REDIRECT_ACCEPTED, etc.)
+//   - error: Always nil (errors are captured as findings)
+//
+// Side effects: None (read-only probe, does not actually register clients)
 func (f *funnel) runDCRProbe() (string, string, []finding, error) {
 	findings, evidence := probeDCREndpoints(f.client, f.config, f.authMetadata.RegistrationEndpoints, &f.trace, f.verboseOutput)
 	status := statusFromFindings(findings, true)
