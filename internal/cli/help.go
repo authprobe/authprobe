@@ -64,12 +64,26 @@ DIAGNOSTICS:
   -d, --tool-detail <name> Print a single MCP tool's full JSON definition.
 
 EXAMPLES:
+  # Quick scan
   authprobe scan https://mcp.example.com/mcp
-  authprobe scan https://mcp.example.com/mcp --json -
-  authprobe scan https://mcp.example.com/mcp --md report.md --json report.json
-  authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com" --fail-on medium
-  authprobe scan https://mcp.example.com/mcp --bundle evidence.zip
-  authprobe scan https://mcp.example.com/mcp --rfc strict
+
+  # Re-run failed steps to capture their full trace
+  authprobe scan https://mcp.example.com/mcp --trace-failure
+
+  # See exactly what's on the wire (headers, bodies, status codes)
+  authprobe scan https://mcp.example.com/mcp --verbose
+
+  # Why did it fail? Get RFC rationale for every step
+  authprobe scan https://mcp.example.com/mcp --explain
+
+  # LLM-powered deep dive into compliance gaps
+  authprobe scan https://mcp.example.com/mcp --openai-api-key $OPENAI_API_KEY
+
+  # List available MCP tools on the server
+  authprobe scan https://mcp.example.com/mcp --tool-list
+
+For the latest version, full documentation, and all options visit:
+  https://github.com/authprobe/authprobe
 `
 
 const rootHelp = `authprobe: MCP OAuth diagnostics in minutes (discovery → metadata → token readiness → auth header checks).
@@ -81,4 +95,7 @@ COMMANDS:
   scan       Diagnose MCP OAuth by running a staged probe.
 
 Use "authprobe <command> --help" for more information about a command.
+
+For the latest version, full documentation, and all options visit:
+  https://github.com/authprobe/authprobe
 `
