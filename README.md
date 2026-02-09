@@ -104,7 +104,7 @@ expectations if an Anthropic or OpenAI API key is provided.
 ### 1) Funnel view (what broke, where)
 ```text
 
-ubuntu@bastion-and-dev-machine:/mnt/vol2/authprobe$ go run cmd/authprobe/main.go scan https://aws-mcp.us-east-1.api.aws/mcp --trace-failure
+$ go run cmd/authprobe/main.go scan https://aws-mcp.us-east-1.api.aws/mcp --trace-failure
 Command:   authprobe scan --trace-failure https://aws-mcp.us-east-1.api.aws/mcp
 Scanning:  https://aws-mcp.us-east-1.api.aws/mcp
 Scan time: Feb 09, 2026 04:44:41 UTC
