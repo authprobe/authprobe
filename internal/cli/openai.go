@@ -77,7 +77,7 @@ func buildOpenAIExplanation(config scanConfig, report scanReport) (string, error
 				},
 			},
 		},
-		MaxOutputTokens: 600,
+		MaxOutputTokens: config.LLMMaxTokens,
 	}
 
 	body, err := json.Marshal(payload)

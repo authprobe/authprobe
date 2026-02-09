@@ -103,6 +103,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(toolDetail, "d", "", "")
 	openAIAPIKey := fs.String("openai-api-key", "", "")
 	anthropicAPIKey := fs.String("anthropic-api-key", "", "")
+	llmMaxTokens := fs.Int("llm-max-tokens", 700, "")
 
 	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -124,6 +125,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Explain:             *explain,
 		OpenAIAPIKey:        strings.TrimSpace(*openAIAPIKey),
 		AnthropicAPIKey:     strings.TrimSpace(*anthropicAPIKey),
+		LLMMaxTokens:        *llmMaxTokens,
 		FailOn:              fs.Lookup("fail-on").Value.String(),
 		MCPMode:             fs.Lookup("mcp").Value.String(),
 		RFCMode:             fs.Lookup("rfc").Value.String(),

@@ -58,6 +58,7 @@ DIAGNOSTICS:
       --openai-api-key     OpenAI API key (or set OPENAI_API_KEY). Enables LLM explanations.
       --anthropic-api-key  Anthropic API key (or set ANTHROPIC_API_KEY). Enables LLM explanations.
                            If both are set, OpenAI is used.
+      --llm-max-tokens     Maximum output tokens for LLM explanations. Default: 700
   -l, --tool-list          Print MCP tool names with their titles (from tools/list).
   -d, --tool-detail <name> Print a single MCP tool's full JSON definition.
 

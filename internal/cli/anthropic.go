@@ -65,7 +65,7 @@ func buildAnthropicExplanation(config scanConfig, report scanReport) (string, er
 				},
 			},
 		},
-		MaxTokens: 700,
+		MaxTokens: config.LLMMaxTokens,
 	}
 
 	body, err := json.Marshal(payload)
