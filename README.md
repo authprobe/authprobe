@@ -380,12 +380,12 @@ implementation issues.
 
 ### 4. Correct Server Behavior per Specifications
 
-| Requirement                                              | Correct Behavior                                                                           |
-|----------------------------------------------------------|--------------------------------------------------------------------------------------------|
-| **Handling 401 Unauthorized**<br>**with OAuth**<br>(MCP 2025-11-25, RFC 7235) | Respond with HTTP 401 **including a `WWW-Authenticate` header**,<br>e.g., `WWW-Authenticate: Bearer realm="aws-mcp", error="invalid_token",`<br>`error_description="Invalid or missing token"`                              |
-| **Expose OAuth Discovery**<br>**Metadata** (RFC 9728)    | Implement a valid PRM endpoint at `https://.../.well-known/oauth-protected-resource`<br>returning **200 OK** with a JSON payload listing authorization servers,<br>token endpoint URLs, supported scopes, token types, etc.    |
-| **Support HTTP GET on**<br>**PRM Endpoint**              | PRM endpoint **must support the GET method** and return JSON metadata, not 405.             |
-| **If Non-OAuth Auth**<br>**is Used** (MCP 2025-11-25)    | Document the authentication mechanism clearly (e.g., AWS SigV4), and do **not** mislead<br>clients by requiring OAuth authentication without discovery metadata or<br>WWW-Authenticate. Servers can omit OAuth metadata but must include correct<br>HTTP auth headers or documentation. |
+| Requirement                                  | Correct Behavior |
+|----------------------------------------------|------------------|
+| **Handling 401 Unauthorized with OAuth** (MCP 2025-11-25, RFC 7235) | Respond with HTTP 401 **including a `WWW-Authenticate` header**, e.g., `WWW-Authenticate: Bearer realm="aws-mcp", error="invalid_token", error_description="Invalid or missing token"` |
+| **Expose OAuth Discovery Metadata** (RFC 9728) | Implement a valid PRM endpoint at `https://.../.well-known/oauth-protected-resource` returning **200 OK** with a JSON payload listing authorization servers, token endpoint URLs, supported scopes, token types, etc. |
+| **Support HTTP GET on PRM Endpoint** | PRM endpoint **must support the GET method** and return JSON metadata, not 405. |
+| **If Non-OAuth Auth is Used** (MCP 2025-11-25) | Document the authentication mechanism clearly (e.g., AWS SigV4), and do **not** mislead clients by requiring OAuth authentication without discovery metadata or WWW-Authenticate. Servers can omit OAuth metadata but must include correct HTTP auth headers or documentation. |
 
 
 
