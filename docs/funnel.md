@@ -5,23 +5,25 @@ This document explains how AuthProbe stages its scan, what each step checks, and
 ## Scan Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            AuthProbe Scan Funnel                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  [1] Discovery ──► [2] MCP Init ──► [3] PRM ──► [4] Auth Server ──► [5] Token
-│        │                │              │              │                │    │
-│        ▼                ▼              ▼              ▼                ▼    │
-│     401 + WWW-     initialize +    Fetch PRM     Fetch issuer      POST     │
-│     Authenticate   tools/list      metadata      metadata         probe     │
-│                                                                             │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  Skip conditions:                                                           │
-│    • Step 2 skipped if --mcp off                                            │
-│    • Steps 3-5 skipped if no 401 (auth not required)                        │
-│    • Steps 4-5 skipped if no authorization_servers found                    │
-│    • Step 5 skipped if no token_endpoint found                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                               AuthProbe Scan Funnel                                  │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                      │
+│  [1] Discovery ► [2] MCP Init ► [3] PRM ► [4] Auth Server ► [5] Token ► [6] DCR     │
+│        │              │            │             │               │           │        │
+│        ▼              ▼            ▼             ▼               ▼           ▼        │
+│     401 + WWW-   initialize +  Fetch PRM    Fetch issuer     POST        POST        │
+│     Authenticate tools/list    metadata     metadata         probe       register     │
+│                                                                                      │
+│  ──────────────────────────────────────────────────────────────────────────────────  │
+│  Skip conditions:                                                                    │
+│    • Step 2 skipped if --mcp off                                                     │
+│    • Step 3 never skipped (result determines auth flow)                              │
+│    • Steps 4-6 skipped if auth not required                                          │
+│    • Step 4 also skipped if no authorization_servers found in PRM                    │
+│    • Step 5 also skipped if no token_endpoint found in auth server metadata          │
+│    • Step 6 also skipped if no registration_endpoint found in auth server metadata   │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Call Trace
@@ -104,41 +106,63 @@ AuthProbe attempts authorization server discovery in a bounded fallback sequence
 
 ## Failure Codes by Step
 
-### Step 1: Discovery
+### Step 1: Discovery (MCP Probe)
 
-| Code                            | Expectation                                                | Spec                                                               |
-|---------------------------------|------------------------------------------------------------|--------------------------------------------------------------------|
-| `MCP_PROBE_TIMEOUT`             | Probe returns headers promptly                             | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)    |
-| `DISCOVERY_NO_WWW_AUTHENTICATE` | `401` includes `WWW-Authenticate` with `resource_metadata` | [RFC 9728 §5](https://datatracker.ietf.org/doc/html/rfc9728#section-5) |
+| Code                            | Expectation                                                   | Spec                                                               |
+|---------------------------------|---------------------------------------------------------------|--------------------------------------------------------------------|
+| `MCP_PROBE_TIMEOUT`             | Probe returns headers promptly                                | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)    |
+| `MCP_GET_NOT_SSE`               | GET returns `text/event-stream` or `405 Method Not Allowed`   | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)    |
 
 ### Step 2: MCP Initialize + Tools/List
 
-| Code                               | Expectation                                | Spec                                                                  |
-|------------------------------------|--------------------------------------------|-----------------------------------------------------------------------|
-| `MCP_INITIALIZE_FAILED`            | `initialize` returns `200` with JSON       | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)       |
-| `MCP_TOOLS_LIST_FAILED`            | `tools/list` returns `200` with JSON       | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)       |
-| `MCP_JSONRPC_RESPONSE_INVALID`     | Response has valid JSON-RPC 2.0 structure  | [JSON-RPC 2.0](https://www.jsonrpc.org/specification)                 |
-| `MCP_JSONRPC_RESPONSE_ID_MISMATCH` | Response ID matches request ID             | [JSON-RPC 2.0](https://www.jsonrpc.org/specification)                 |
-| `MCP_PROTOCOL_VERSION_MISMATCH`    | Server returns compatible protocol version | [MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) |
+| Code                                      | Expectation                                          | Spec                                                                       |
+|-------------------------------------------|------------------------------------------------------|----------------------------------------------------------------------------|
+| `MCP_INITIALIZE_FAILED`                   | `initialize` returns `200` with JSON                 | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_INITIALIZE_RESULT_INVALID`           | `initialize` result is a valid JSON object           | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_INITIALIZE_ORDERING_NOT_ENFORCED`    | Server rejects requests before `initialized` notify  | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_TOOLS_LIST_FAILED`                   | `tools/list` returns `200` with JSON                 | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_TOOLS_LIST_INVALID`                  | `tools/list` result parses as valid tool array        | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_JSONRPC_RESPONSE_INVALID`            | Response has valid JSON-RPC 2.0 structure            | [JSON-RPC 2.0](https://www.jsonrpc.org/specification)                      |
+| `MCP_JSONRPC_RESPONSE_ID_MISMATCH`        | Response ID matches request ID                       | [JSON-RPC 2.0](https://www.jsonrpc.org/specification)                      |
+| `MCP_JSONRPC_ID_NULL_ACCEPTED`            | Server rejects requests with null ID                 | [JSON-RPC 2.0](https://www.jsonrpc.org/specification)                      |
+| `MCP_PROTOCOL_VERSION_MISSING`            | `initialize` result includes `protocolVersion`       | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_PROTOCOL_VERSION_MISMATCH`           | Server returns compatible protocol version           | [MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) |
+| `MCP_PROTOCOL_VERSION_REJECTION_MISSING`  | Server rejects unsupported protocol versions         | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_CAPABILITIES_INVALID`                | `initialize` capabilities is a valid object          | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_NOTIFICATION_FAILED`                 | `notifications/initialized` accepted by server       | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_NOTIFICATION_STATUS_INVALID`         | Notification returns appropriate status code         | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_NOTIFICATION_BODY_PRESENT`           | Notification response has no body                    | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_NOTIFICATION_WITH_ID_ACCEPTED`       | Server rejects notifications that include an ID      | [JSON-RPC 2.0](https://www.jsonrpc.org/specification)                      |
+| `MCP_ORIGIN_NOT_VALIDATED`                | Server validates Origin header                       | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_SESSION_ID_REJECTION_MISSING`        | Server rejects invalid session IDs                   | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_PING_INVALID_RESPONSE`               | `ping` returns valid empty result                    | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_TOOL_INPUT_SCHEMA_MISSING`           | Each tool has an `inputSchema`                       | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_TOOL_INPUT_SCHEMA_INVALID`           | Tool `inputSchema` is a valid JSON Schema object     | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_ICON_UNSAFE_SCHEME`                  | Tool icon URIs use safe schemes (https)              | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
+| `MCP_TASKS_METHOD_MISSING`                | Server supports `tasks/list` method                  | [MCP](https://modelcontextprotocol.io/specification/2025-11-25)            |
 
 ### Step 3: PRM Discovery
 
-| Code                                | Expectation                                      | Spec                                                                       |
-|-------------------------------------|--------------------------------------------------|----------------------------------------------------------------------------|
-| `AUTH_REQUIRED_BUT_NOT_ADVERTISED`  | Auth required but OAuth discovery not advertised | Operational guidance                                                      |
-| `DISCOVERY_ROOT_WELLKNOWN_404`      | Root PRM reachable when path-suffix not required | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
-| `PRM_HTTP_STATUS_NOT_200`           | PRM endpoint returns `200 OK`                    | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
-| `PRM_CONTENT_TYPE_NOT_JSON`         | Response `Content-Type` is JSON                  | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
-| `PRM_NOT_JSON_OBJECT`               | Response is a JSON object                        | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)     |
-| `PRM_RESOURCE_MISSING`              | PRM includes `resource` field                    | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
-| `PRM_RESOURCE_MISMATCH`             | `resource` matches MCP endpoint                  | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
-| `PRM_RESOURCE_TRAILING_SLASH`       | `resource` differs only by trailing slash (warn) | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
-| `PRM_MISSING_AUTHORIZATION_SERVERS` | PRM includes `authorization_servers`             | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
-| `PRM_BEARER_METHODS_INVALID`        | `bearer_methods_supported` values are valid      | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)     |
-| `PRM_WELLKNOWN_PATH_SUFFIX_MISSING` | Path-suffix PRM exists when resource has path    | [RFC 9728 §4.1](https://datatracker.ietf.org/doc/html/rfc9728#section-4.1) |
-| `RFC3986_INVALID_URI`               | URLs parse as valid URIs                         | [RFC 3986 §3](https://datatracker.ietf.org/doc/html/rfc3986#section-3)     |
-| `RFC3986_ABSOLUTE_HTTPS_REQUIRED`   | URLs are absolute HTTPS                          | [RFC 3986 §4.3](https://datatracker.ietf.org/doc/html/rfc3986#section-4.3) |
-| `RESOURCE_FRAGMENT_FORBIDDEN`       | `resource` has no fragment                       | [RFC 8707 §2](https://datatracker.ietf.org/doc/html/rfc8707#section-2)     |
+| Code                                  | Expectation                                             | Spec                                                                       |
+|---------------------------------------|---------------------------------------------------------|----------------------------------------------------------------------------|
+| `AUTH_REQUIRED_BUT_NOT_ADVERTISED`    | Auth required but OAuth discovery not advertised        | Operational guidance                                                       |
+| `DISCOVERY_NO_WWW_AUTHENTICATE`       | `401` includes `WWW-Authenticate` with `resource_metadata` | [RFC 9728 §5](https://datatracker.ietf.org/doc/html/rfc9728#section-5)  |
+| `OAUTH_DISCOVERY_UNAVAILABLE`         | At least one PRM endpoint returns valid metadata        | [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728)                  |
+| `HEADER_STRIPPED_BY_PROXY_SUSPECTED`  | `WWW-Authenticate` present when PRM is discoverable     | Operational guidance                                                       |
+| `DISCOVERY_ROOT_WELLKNOWN_404`        | Root PRM reachable when path-suffix not required        | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)    |
+| `PRM_HTTP_STATUS_NOT_200`             | PRM endpoint returns `200 OK`                           | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)    |
+| `PRM_CONTENT_TYPE_NOT_JSON`           | Response `Content-Type` is JSON                         | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)    |
+| `PRM_NOT_JSON_OBJECT`                 | Response is a JSON object                               | [RFC 9728 §4](https://datatracker.ietf.org/doc/html/rfc9728#section-4)    |
+| `PRM_RESOURCE_MISSING`                | PRM includes `resource` field                           | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)    |
+| `PRM_RESOURCE_MISMATCH`               | `resource` matches MCP endpoint                         | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)    |
+| `PRM_RESOURCE_TRAILING_SLASH`         | `resource` differs only by trailing slash (warn)        | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)    |
+| `PRM_MISSING_AUTHORIZATION_SERVERS`   | PRM includes `authorization_servers`                    | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)    |
+| `PRM_BEARER_METHODS_INVALID`          | `bearer_methods_supported` values are valid             | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)    |
+| `PRM_JWKS_URI_NOT_HTTPS`              | `jwks_uri` uses HTTPS                                   | [RFC 9728 §3](https://datatracker.ietf.org/doc/html/rfc9728#section-3)    |
+| `PRM_WELLKNOWN_PATH_SUFFIX_MISSING`   | Path-suffix PRM exists when resource has path           | [RFC 9728 §4.1](https://datatracker.ietf.org/doc/html/rfc9728#section-4.1)|
+| `RFC3986_INVALID_URI`                 | URLs parse as valid URIs                                | [RFC 3986 §3](https://datatracker.ietf.org/doc/html/rfc3986#section-3)    |
+| `RFC3986_ABSOLUTE_HTTPS_REQUIRED`     | URLs are absolute HTTPS                                 | [RFC 3986 §4.3](https://datatracker.ietf.org/doc/html/rfc3986#section-4.3)|
+| `RESOURCE_FRAGMENT_FORBIDDEN`         | `resource` has no fragment                              | [RFC 8707 §2](https://datatracker.ietf.org/doc/html/rfc8707#section-2)    |
 
 ### Step 4: Auth Server Metadata
 
@@ -183,9 +207,11 @@ AuthProbe attempts authorization server discovery in a bounded fallback sequence
 
 ## Quick Reference
 
-| Step                 | Skip Condition                   |
-|----------------------|----------------------------------|
-| 2 (MCP Initialize)   | MCP mode is `off`                |
-| 3 (PRM Discovery)    | Never (result determines auth)   |
-| 4 (Auth Server)      | No authorization servers found   |
-| 5 (Token Readiness)  | No token endpoints found         |
+| Step                 | Skip Condition                                            |
+|----------------------|-----------------------------------------------------------|
+| 1 (MCP Probe)        | Never (always runs)                                       |
+| 2 (MCP Initialize)   | `--mcp off`                                               |
+| 3 (PRM Discovery)    | Never (result determines auth flow)                       |
+| 4 (Auth Server)      | Auth not required, or no `authorization_servers` in PRM   |
+| 5 (Token Readiness)  | Auth not required, or no `token_endpoint` in metadata     |
+| 6 (DCR)              | Auth not required, or no `registration_endpoint` in metadata |
