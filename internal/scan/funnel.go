@@ -468,32 +468,41 @@ func (f *funnel) buildReport() ScanReport {
 	}
 }
 
+// sectionSeparator is a visual divider used between stdout sections.
+const sectionSeparator = "════════════════════════════════════════════════════════════"
+
+// sectionHeading returns a formatted heading block for stdout sections.
+func sectionHeading(title string) string {
+	upper := strings.ToUpper(title)
+	return sectionSeparator + "\n  " + upper + "\n" + sectionSeparator
+}
+
 // buildScanSummary constructs the scan summary with optional explanation.
 func (f *funnel) buildScanSummary(report ScanReport) ScanSummary {
 	summary := buildSummary(report)
 	if f.config.Explain {
 		explanation := buildScanExplanation(f.config, f.resourceMetadata, f.prmResult, f.authRequired)
 		if explanation != "" {
-			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("RFC Rationale") + "\n" + explanation + "\n"
 		}
 	}
 	traceASCII := buildTraceASCII(f.trace)
 	if traceASCII != "" {
-		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceASCII + "\n"
+		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("Call Trace") + "\n" + traceASCII + "\n"
 	}
-	if strings.TrimSpace(f.failedTestLog) != "" {
+	if f.config.TraceFailure && strings.TrimSpace(f.failedTestLog) != "" {
 		trimmed := strings.TrimSpace(f.failedTestLog)
-		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\nFailed Test Verbose Output\n" + trimmed + "\n"
+		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("Failed Test Verbose Output") + "\n" + trimmed + "\n"
 		summary.MD = strings.TrimSpace(summary.MD) + "\n\n## Failed Test Verbose Output\n\n```\n" + trimmed + "\n```\n"
 	}
 	if f.config.LLMExplain {
 		explanation, err := buildLLMExplanation(f.config, report)
 		if err != nil {
 			message := fmt.Sprintf("LLM explanation unavailable: %v", err)
-			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + message + "\n"
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("LLM Explanation") + "\n" + message + "\n"
 			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## LLM explanation\n\n" + message + "\n"
 		} else if explanation != "" {
-			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\nLLM explanation\n" + explanation + "\n"
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("LLM Explanation") + "\n" + explanation + "\n"
 			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## LLM explanation\n\n" + explanation + "\n"
 		}
 	}

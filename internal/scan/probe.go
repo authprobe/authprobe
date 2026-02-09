@@ -47,6 +47,7 @@ type ScanConfig struct {
 	Insecure            bool // Skip TLS certificate verification (dev only)
 	NoFollowRedirects   bool // Stop at first response, don't follow HTTP redirects
 	Redact              bool
+	TraceFailure        bool   // Include verbose output of failed steps in report
 	JSONPath            string
 	MDPath              string
 	TraceASCIIPath      string

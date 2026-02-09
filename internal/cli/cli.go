@@ -86,6 +86,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	fs.String("bundle", "", "")
 	fs.String("output-dir", "", "")
 	noRedact := fs.Bool("no-redact", false, "")
+	traceFailure := fs.Bool("trace-failure", false, "")
 	verbose := fs.Bool("verbose", false, "")
 	fs.BoolVar(verbose, "v", false, "")
 	explain := fs.Bool("explain", false, "")
@@ -126,6 +127,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		Insecure:            fs.Lookup("insecure").Value.String() == "true",
 		NoFollowRedirects:   fs.Lookup("no-follow-redirects").Value.String() == "true",
 		Redact:              !*noRedact,
+		TraceFailure:        *traceFailure,
 		JSONPath:            fs.Lookup("json").Value.String(),
 		MDPath:              fs.Lookup("md").Value.String(),
 		TraceASCIIPath:      fs.Lookup("trace-ascii").Value.String(),

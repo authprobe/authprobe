@@ -53,6 +53,7 @@ OUTPUTS:
 
 DIAGNOSTICS:
   -v, --verbose            Verbose logs (includes request/response headers + bodies).
+      --trace-failure      Include verbose output of failed probe steps in report.
       --no-redact          Disable redaction in verbose logs and evidence bundles.
   -e, --explain            Print an RFC rationale for each scan step.
       --openai-api-key     OpenAI API key (or set OPENAI_API_KEY). Enables LLM explanations.
