@@ -157,6 +157,7 @@ func (f *funnel) skipIfMCPDisabled() (bool, string) {
 	return false, ""
 }
 
+// skipIfNoAuthServers skips Step 4 if no authorization_servers were found in PRM.
 func (f *funnel) skipIfNoAuthServers() (bool, string) {
 	if !f.authRequired {
 		return true, "auth not required"
@@ -167,6 +168,7 @@ func (f *funnel) skipIfNoAuthServers() (bool, string) {
 	return false, ""
 }
 
+// skipIfNoTokenEndpoints skips Step 5 if no token_endpoint was found in auth server metadata.
 func (f *funnel) skipIfNoTokenEndpoints() (bool, string) {
 	if !f.authRequired {
 		return true, "auth not required"
@@ -177,6 +179,7 @@ func (f *funnel) skipIfNoTokenEndpoints() (bool, string) {
 	return false, ""
 }
 
+// skipIfNoRegistrationEndpoints skips Step 6 if no registration_endpoint was found in auth server metadata.
 func (f *funnel) skipIfNoRegistrationEndpoints() (bool, string) {
 	if !f.authRequired {
 		return true, "auth not required"
@@ -187,6 +190,7 @@ func (f *funnel) skipIfNoRegistrationEndpoints() (bool, string) {
 	return false, ""
 }
 
+// updateProbeDetailForAuth updates Step 1's detail when Step 2 reveals auth is actually required.
 func (f *funnel) updateProbeDetailForAuth() {
 	for i := range f.steps {
 		if f.steps[i].ID == 1 && strings.Contains(f.steps[i].Detail, "auth not required") {
@@ -213,6 +217,11 @@ func (f *funnel) runMCPProbe() (string, string, []finding, error) {
 // runMCPInitialize performs MCP JSON-RPC initialize handshake and tools/list.
 func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
 	status, detail, findings, authObservation := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
+	// Handle late auth discovery: Step 1 may return 405 (method not allowed) but Step 2
+	// reveals auth is required when initialize/tools_list gets 401/403.
+	// This updates authRequired so subsequent steps (PRM, auth server) proceed correctly.
+	// If 401 was received without WWW-Authenticate header, store the observation to generate
+	// DISCOVERY_NO_WWW_AUTHENTICATE finding and update Step 1's detail to reflect auth status.
 	if authObservation != nil && (authObservation.Status == http.StatusUnauthorized || authObservation.Status == http.StatusForbidden) {
 		f.authRequired = true
 		if !authObservation.WWWAuthenticatePresent {
@@ -366,6 +375,7 @@ func (f *funnel) buildReport() scanReport {
 		MCPMode:         f.config.MCPMode,
 		RFCMode:         f.config.RFCMode,
 		Timestamp:       time.Now().UTC().Format(time.RFC3339),
+		Github:          githubURL,
 		PRMOK:           f.prmOK,
 		OAuthDiscovery:  f.oauthDiscoveryOK,
 		AuthzMetadataOK: f.authzMetadataOK,

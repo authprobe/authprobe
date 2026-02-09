@@ -47,12 +47,16 @@ import (
 // buildSummary constructs a scanSummary with stdout, markdown, and JSON representations.
 func buildSummary(report scanReport) scanSummary {
 	var out strings.Builder
+	reportGithub := report.Github
+	if reportGithub == "" {
+		reportGithub = githubURL
+	}
 	if report.Command != "" {
 		fmt.Fprintf(&out, "%-10s %s\n", "Command:", report.Command)
 	}
 	fmt.Fprintf(&out, "%-10s %s\n", "Scanning:", report.Target)
 	fmt.Fprintf(&out, "%-10s %s\n", "Scan time:", formatHumanTime(report.Timestamp))
-	fmt.Fprintf(&out, "%-10s %s\n", "Github:", "https://github.com/authprobe/authprobe")
+	fmt.Fprintf(&out, "%-10s %s\n", "Github:", reportGithub)
 	fmt.Fprintln(&out, "\nFunnel")
 	maxLabel := 0
 	for _, step := range report.Steps {
@@ -264,6 +268,10 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 // renderMarkdown generates a markdown representation of the scan report.
 func renderMarkdown(report scanReport) string {
 	var md strings.Builder
+	reportGithub := report.Github
+	if reportGithub == "" {
+		reportGithub = githubURL
+	}
 	fmt.Fprintf(&md, "# AuthProbe report\n\n")
 	if report.Command != "" {
 		fmt.Fprintf(&md, "```\n%s\n```\n\n", report.Command)
@@ -273,6 +281,7 @@ func renderMarkdown(report scanReport) string {
 	fmt.Fprintf(&md, "- MCP: %s\n", report.MCPMode)
 	fmt.Fprintf(&md, "- RFC: %s\n", report.RFCMode)
 	fmt.Fprintf(&md, "- Timestamp: %s\n\n", report.Timestamp)
+	fmt.Fprintf(&md, "- Github: %s\n\n", reportGithub)
 	fmt.Fprintf(&md, "## Funnel\n\n")
 	for _, step := range report.Steps {
 		fmt.Fprintf(&md, "- [%d] %s: **%s**", step.ID, step.Name, step.Status)
@@ -412,6 +421,7 @@ func writeBundle(path string, summary scanSummary) error {
 	}
 	meta := map[string]string{
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
+		"github":       githubURL,
 	}
 	metaBytes, _ := json.MarshalIndent(meta, "", "  ")
 	if err := writeZipFile(zipWriter, "meta.json", metaBytes); err != nil {
@@ -447,7 +457,7 @@ func buildTraceJSONL(entries []traceEntry) []byte {
 // buildTraceASCII converts trace entries into an ASCII call trace.
 func buildTraceASCII(entries []traceEntry) string {
 	var out strings.Builder
-	out.WriteString("Call Trace Using: https://github.com/authprobe/authprobe\n\n")
+	out.WriteString("Call Trace Using: " + githubURL + "\n\n")
 	if len(entries) == 0 {
 		out.WriteString("(no trace entries)\n")
 		return out.String()

@@ -79,12 +79,15 @@ type scanConfig struct {
 	OutputDir           string
 }
 
+const githubURL = "https://github.com/authprobe/authprobe"
+
 type scanReport struct {
 	Command         string     `json:"command"`
 	Target          string     `json:"target"`
 	MCPMode         string     `json:"mcp_mode"`
 	RFCMode         string     `json:"rfc_mode"`
 	Timestamp       string     `json:"timestamp"`
+	Github          string     `json:"github"`
 	PRMOK           bool       `json:"prm_ok"`
 	OAuthDiscovery  bool       `json:"oauth_discovery_viable"`
 	AuthzMetadataOK bool       `json:"authz_server_metadata_ok"`
@@ -166,6 +169,8 @@ type mcpAuthObservation struct {
 // Response handling:
 //   - 401 Unauthorized: Auth required. Extract resource_metadata from WWW-Authenticate header.
 //   - 405 Method Not Allowed: Server doesn't support GET/SSE. Auth status unknown; check PRM.
+//     	Step 2 will send POST requests (initialize, tools/list) per MCP spec, which may
+//     	reveal auth requirements (401/403) that GET couldn't detect.
 //   - 200 OK: Auth not required (public endpoint). Validates SSE content-type per MCP spec.
 //   - Timeout: Returns MCP_PROBE_TIMEOUT finding (servers must respond promptly per MCP spec).
 func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, string, []finding, string, bool, error) {
