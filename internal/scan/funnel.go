@@ -468,13 +468,16 @@ func (f *funnel) buildReport() ScanReport {
 	}
 }
 
-// sectionSeparator is a visual divider used between stdout sections.
-const sectionSeparator = "════════════════════════════════════════════════════════════"
-
 // sectionHeading returns a formatted heading block for stdout sections.
 func sectionHeading(title string) string {
 	upper := strings.ToUpper(title)
-	return sectionSeparator + "\n  " + upper + "\n" + sectionSeparator
+	pad := 60 - 4 - len(upper) // 4 = len("┤ ") + len(" ├")
+	if pad < 2 {
+		pad = 2
+	}
+	left := pad / 2
+	right := pad - left
+	return "┌" + strings.Repeat("─", left) + "┤ " + upper + " ├" + strings.Repeat("─", right) + "┐"
 }
 
 // buildScanSummary constructs the scan summary with optional explanation.

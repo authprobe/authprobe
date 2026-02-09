@@ -39,13 +39,43 @@ Download the latest release binary from GitHub Releases and put it on your PATH.
 docker pull ghcr.io/authprobe/authprobe:latest
 docker run --rm ghcr.io/authprobe/authprobe:latest scan https://mcp.example.com/mcp
 docker run --rm ghcr.io/authprobe/authprobe:latest scan \
-	https://compute.googleapis.com/mcp --openai-api-key=$OPENAI_API_KEY ```
+	https://compute.googleapis.com/mcp --openai-api-key=<key>
 
-### Run a scan
+```
+
+### Install (Clone Repository)
+```bash
+git clone https://github.com/authprobe/authprobe.git && \
+      cd authprobe && \
+      go run cmd/authprobe/main.go scan https://mcp.example.com/mcp
+```
+
+### Isolating Failure using `authprobe`
+
+AuthProbe helps you isolate failures by capturing network traces for failed probe steps and optionally using an LLM to explain RFC compliance gaps.
+
+#### Run Basic Scan
+
 ```bash
 authprobe scan https://mcp.example.com/mcp
 ```
----
+
+#### Get verbose output for failure
+
+Shows the complete trace of request/response that went on the wire to help understand failure
+
+```bash
+authprobe scan https://mcp.example.com/mcp --trace-failure
+```
+
+#### Have a LLM model explain failure
+
+Use a LLM to request analysis of failure. `llm-max-tokens` defaults to `600` if a value isn't provided
+
+```bash
+export OPENAI_API_KEY=<key>
+authprobe scan https://mcp.example.com/mcp --trace-failure --llm-max-tokens=1080
+```
 
 ## What you get
 
@@ -54,108 +84,314 @@ expectations if an Anthropic or OpenAI API key is provided.
 
 ### 1) Funnel view (what broke, where)
 ```text
-Command:   authprobe scan https://knowledge-mcp.global.api.aws Scanning:
-https://knowledge-mcp.global.api.aws
-Scan time: Feb 04, 2026 20:02:52 UTC
+
+ubuntu@bastion-and-dev-machine:/mnt/vol2/authprobe$ go run cmd/authprobe/main.go scan https://aws-mcp.us-east-1.api.aws/mcp --trace-failure
+Command:   authprobe scan --trace-failure https://aws-mcp.us-east-1.api.aws/mcp
+Scanning:  https://aws-mcp.us-east-1.api.aws/mcp
+Scan time: Feb 09, 2026 04:44:41 UTC
+Github:    https://github.com/authprobe/authprobe
 
 Funnel
   [1] MCP probe (401 + WWW-Authenticate)      [-] SKIP
         probe returned 405; checking PRM for OAuth config
 
   [2] MCP initialize + tools/list             [X] FAIL
-        initialize -> 200
-        notifications/initialized -> 202
-        tools/list -> 200 (tools: aws___get_regional_availability,
-        aws___list_regions, aws___read_documentation, aws___recommend, +1 more)
+        initialize -> 401 (error: Authentication failed: Unable to verify your
+        user identity. Please ensure you are properly authenticated and try
+        again.)
 
-  [3] PRM fetch matrix                        [+] PASS
-        https://knowledge-mcp.global.api.aws/.well-known/oauth-protected-resource
-        -> 200
-        no OAuth configuration found
+  [3] PRM fetch matrix                        [X] FAIL
+        https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource
+        -> 405
+        https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource/mcp
+        -> 405
+        PRM unreachable or unusable; OAuth discovery unavailable
 
   [4] Auth server metadata                    [-] SKIP
-        auth not required
+        no authorization_servers in PRM
 
   [5] Token endpoint readiness (heuristics)   [-] SKIP
-        auth not required
+        no token_endpoint in metadata
 
   [6] Dynamic client registration (RFC 7591)  [-] SKIP
-        auth not required
+        no registration_endpoint in metadata
 
-Primary finding (HIGH): MCP_JSONRPC_ID_NULL_ACCEPTED (confidence 1.00)
-Evidence:
-      null id probe status 200
-      MCP JSON-RPC requires request IDs to be strings or numbers; null IDs
-      must be rejected.
+Primary Finding (HIGH): AUTH_REQUIRED_BUT_NOT_ADVERTISED (confidence 1.00)
+  Evidence:
+      initialize -> 401
+      initialize error: Authentication failed: Unable to verify your user identity. Please
+      ensure you are properly authenticated and try again.
+      WWW-Authenticate: (missing)
+      https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource -> 405
+      https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource/mcp -> 405
+      PRM unreachable or unusable; OAuth discovery unavailable
+      Auth appears required but OAuth discovery was not advertised. Next steps: add
+      WWW-Authenticate + PRM for OAuth/MCP discovery, or document the required non-OAuth auth
+      (e.g., SigV4).
+┌───────────────────────┤ CALL TRACE ├───────────────────────┐
+Call Trace Using: https://github.com/authprobe/authprobe
 
-LLM explanation
-# Analysis of MCP_JSONRPC_ID_NULL_ACCEPTED
+  ┌────────────┐                                                    ┌────────────┐
+  │ authprobe  │                                                    │ MCP Server │
+  └─────┬──────┘                                                    └─────┬──────┘
+        │                                                                 │
+        │ ╔═══ Step 1: MCP probe                    ═══════╪═══════════════════╗
+        │  GET https://aws-mcp.us-east-1.api.aws/mcp
+        │  Reason: 401 + WWW-Authenticate discovery
+        │    Accept:  text/event-stream
+        │    Host:    aws-mcp.us-east-1.api.aws
+        ├─────────────────────────────────────────────────────────────────►│
+        │  405 Method Not Allowed
+        │    Allow:           POST
+        │    Content-Length:  102
+        │    Date:            Mon, 09 Feb 2026 04:44:41 GMT
+        │    Server:          CloudFront
+        │    Via:             1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+        │    X-Amz-Cf-Id:     hFriapAaoBgVX_B09D4MbK1-SDPg9l6VwvOw67mrScOeCh5N2ywTWA==
+        │    X-Amz-Cf-Pop:    SFO53-P7
+        │    X-Cache:         LambdaGeneratedResponse from cloudfront
+        │◄─────────────────────────────────────────────────────────────────┤
+        │                                                                  │
+        │ ╔═══ Step 2: MCP initialize               ═══════╪═══════════════════╗
+        │  POST https://aws-mcp.us-east-1.api.aws/mcp
+        │  Reason: Step 2: MCP initialize + tools/list (pre-init tools/list)
+        │    Accept:                application/json, text/event-stream
+        │    Content-Type:          application/json
+        │    Host:                  aws-mcp.us-east-1.api.aws
+        │    Mcp-Protocol-Version:  2025-11-25
+        ├─────────────────────────────────────────────────────────────────►│
+        │  401 Unauthorized
+        │    Content-Length:  194
+        │    Date:            Mon, 09 Feb 2026 04:44:41 GMT
+        │    Server:          CloudFront
+        │    Via:             1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+        │    X-Amz-Cf-Id:     b-ejOK7BHXqcZ_OFbQHqbli8XnA6ZqH160dnpSlKzCbYcuMBG7aLJQ==
+        │    X-Amz-Cf-Pop:    SFO53-P7
+        │    X-Cache:         LambdaGeneratedResponse from cloudfront
+        │◄─────────────────────────────────────────────────────────────────┤
+        │                                                                  │
+        │  POST https://aws-mcp.us-east-1.api.aws/mcp
+        │  Reason: Step 2: MCP initialize + tools/list (initialize)
+        │    Accept:                application/json, text/event-stream
+        │    Content-Type:          application/json
+        │    Host:                  aws-mcp.us-east-1.api.aws
+        │    Mcp-Protocol-Version:  2025-11-25
+        ├─────────────────────────────────────────────────────────────────►│
+        │  401 Unauthorized
+        │    Content-Length:  194
+        │    Date:            Mon, 09 Feb 2026 04:44:41 GMT
+        │    Server:          CloudFront
+        │    Via:             1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+        │    X-Amz-Cf-Id:     OfTZxhdf7sBGylO_uwnubF6Ug8I6t2hhJtNf3Y2cKY9JJFDKQf8Umg==
+        │    X-Amz-Cf-Pop:    SFO53-P7
+        │    X-Cache:         LambdaGeneratedResponse from cloudfront
+        │◄─────────────────────────────────────────────────────────────────┤
+        │                                                                  │
+        │ ╔═══ Step 3: PRM Discovery                ═══════╪═══════════════════╗
+        │  GET https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource
+        │  Reason: Step 3: PRM fetch matrix
+        │    Accept:  application/json
+        │    Host:    aws-mcp.us-east-1.api.aws
+        ├─────────────────────────────────────────────────────────────────►│
+        │  405 Method Not Allowed
+        │    Allow:           POST
+        │    Content-Length:  102
+        │    Date:            Mon, 09 Feb 2026 04:44:41 GMT
+        │    Server:          CloudFront
+        │    Via:             1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+        │    X-Amz-Cf-Id:     T7wqge7EjJ7fawHJ8BfpaQtcdWqrxMyChNc0o4-_ljt2fNo-1mf_HA==
+        │    X-Amz-Cf-Pop:    SFO53-P7
+        │    X-Cache:         LambdaGeneratedResponse from cloudfront
+        │◄─────────────────────────────────────────────────────────────────┤
+        │                                                                  │
+        │  GET https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource/mcp
+                │  Reason: Step 3: PRM fetch matrix
+        │    Accept:  application/json
+        │    Host:    aws-mcp.us-east-1.api.aws
+        ├─────────────────────────────────────────────────────────────────►│
+        │  405 Method Not Allowed
+        │    Allow:           POST
+        │    Content-Length:  102
+        │    Date:            Mon, 09 Feb 2026 04:44:41 GMT
+        │    Server:          CloudFront
+        │    Via:             1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+        │    X-Amz-Cf-Id:     2M5Zpj2fh9-HHFROy6R7AsPxt-IesLDAZJ88YUTB89QHcI3cIDEZBw==
+        │    X-Amz-Cf-Pop:    SFO53-P7
+        │    X-Cache:         LambdaGeneratedResponse from cloudfront
+        │◄─────────────────────────────────────────────────────────────────┤
+        ▼                                                                  ▼
 
-## Verdict: **FAILURE IS VALID AND JUSTIFIED**
-
-## Specification Foundation
-
-### JSON-RPC 2.0 Specification (Core Requirement)
-
-**JSON-RPC 2.0 Section 4.1 - Request object:**
-> **id**: An identifier established by the Client [...] It MUST contain a
-> String, Number, or NULL value.
-
-**JSON-RPC 2.0 Section 4.2 - Response object:**
-> **id**: This member is REQUIRED. It MUST be the same as the value of the id
-> member in the Request Object.
-
-**JSON-RPC 2.0 Section 5.1 - Notification:**
-> A Notification is a Request object **without an "id" member**. [...] The
-> Server MUST NOT reply to a Notification, including those that are within a
-> batch request.
-
-**Critical distinction:** While JSON-RPC 2.0 allows `"id": null` in request
-objects, the semantics are problematic. The specification states that if `id`
-is null, it's technically a valid request (not a notification), and the server
-MUST respond with a response object containing `"id": null`.
-
-### MCP 2025-11-25 Specification
-
-**MCP 2025-11-25 inherits JSON-RPC 2.0** as its transport layer, but adds clarifications:
-
-**Section "JSON-RPC Messages":**
-> MCP uses JSON-RPC 2.0 as its wire format. All messages are JSON-RPC 2.0 compliant.
-
-**Section "Request Identification":**
-> Request **id** field: MUST be a string or number (not null)
+┌───────────────┤ FAILED TEST VERBOSE OUTPUT ├───────────────┐
+== Step 2: MCP initialize + tools/list (initialize) ==
+> POST /mcp HTTP/1.1
+> Host: aws-mcp.us-east-1.api.aws
+> Accept: application/json, text/event-stream
+> Content-Type: application/json
+> Mcp-Protocol-Version: 2025-11-25
 >
-> Notifications: MUST NOT include an id field
+> {"id":1,"jsonrpc":"2.0","method":"initialize","params":{"capabilities":{},"clientInfo":{"name":"authprobe","version":"0.1"},"protocolVersion":"2025-11-25"}}
+< HTTP/2.0 401 Unauthorized
+< Content-Length: 194
+< Date: Mon, 09 Feb 2026 04:44:41 GMT
+< Server: CloudFront
+< Via: 1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+< X-Amz-Cf-Id: j6vZ5X5OT7GHbC1CYUDbNgj8UoBSjaVMxgfv1v5TFAeUdxyZFeLf7g==
+< X-Amz-Cf-Pop: SFO53-P7
+< X-Cache: LambdaGeneratedResponse from cloudfront
+<
+< {"jsonrpc":"2.0","id":1,"result":null,"error":{"code":-32001,"message":"Authentication failed: Unable to verify your user identity. Please ensure you are properly authenticated and try again."}}
 
-This is the **key specification requirement** that applies here. MCP
-explicitly narrows JSON-RPC 2.0's allowance of null IDs.
+== Step 3: PRM fetch matrix ==
+> GET /.well-known/oauth-protected-resource HTTP/1.1
+> Host: aws-mcp.us-east-1.api.aws
+> Accept: application/json
+>
+> (empty body)
+< HTTP/2.0 405 Method Not Allowed
+< Allow: POST
+< Content-Length: 102
+< Date: Mon, 09 Feb 2026 04:44:41 GMT
+< Server: CloudFront
+< Via: 1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+< X-Amz-Cf-Id: D-2GdRq0lEgNouiYU-ZtnS7O4f0Qcc_mv2o6wKnk9UrYdjtRhTWPRQ==
+< X-Amz-Cf-Pop: SFO53-P7
+< X-Cache: LambdaGeneratedResponse from cloudfront
+<
+< {"jsonrpc":"2.0","id":"","result":null,"error":{"code":-32600,"message":"HTTP method not supported."}}
 
-## Why the Failure is Valid
+== Step 3: PRM fetch matrix ==
+> GET /.well-known/oauth-protected-resource/mcp HTTP/1.1
+> Host: aws-mcp.us-east-1.api.aws
+> Accept: application/json
+>
+> (empty body)
+< HTTP/2.0 405 Method Not Allowed
+< Allow: POST
+< Content-Length: 102
+< Date: Mon, 09 Feb 2026 04:44:41 GMT
+< Server: CloudFront
+< Via: 1.1 6269ff653a8a0b71d436afa999909318.cloudfront.net (CloudFront)
+< X-Amz-Cf-Id: j4naZq2teP4ZUsfzCQM2hohEVUBCPpahdMOzbzUaBbe2pa3Lc214hg==
+< X-Amz-Cf-Pop: SFO53-P7
+< X-Cache: LambdaGeneratedResponse from cloudfront
+<
+< {"jsonrpc":"2.0","id":"","result":null,"error":{"code":-32600,"message":"HTTP method not supported."}}
 
-### 1. **MCP Explicitly Prohibits null IDs**
+┌────────────────────┤ LLM EXPLANATION ├─────────────────────┐
+### Summary of the Primary Finding: AUTH_REQUIRED_BUT_NOT_ADVERTISED (High Severity)
 
-The MCP specification **intentionally restricts** the JSON-RPC 2.0 id space:
+The scan indicates that the AWS MCP server at
+`https://aws-mcp.us-east-1.api.aws/mcp` requires authentication
+for the `initialize` call (returns HTTP 401 Unauthorized), but it
+fails to properly advertise the authentication scheme(s).
+Crucially, the server does **not** provide a `WWW-Authenticate`
+header in the 401 response, and the OAuth discovery endpoints
+(Protected Resource Metadata or PRM) are unavailable (returning
+HTTP 405 Method Not Allowed). This combination violates key
+requirements for OAuth-protected resources per MCP 2025-11-25
+and RFC 9728, and results in interoperability and client
+implementation issues.
 
-- **Allowed in MCP requests:** `string` | `number`
-- **Forbidden in MCP requests:** `null`
-- **Forbidden in MCP requests:** omitted (that creates a notification)
+---
 
-When the server at `https://knowledge-mcp.global.api.aws` accepted a request
-with `"id": null` and returned a 200 response, it violated MCP's narrower
-contract.
+## Detailed Explanation / Compliance Analysis
 
-### 2. **Rationale for the MCP Restriction**
+### 1. Auth Required But Not Advertised
 
-The MCP specification's prohibition of null IDs serves several purposes:
+#### Evidence:
+- **Step [2]** shows the MCP `initialize` method returns
+  **401 Unauthorized** with the error
+  `"Authentication failed: Unable to verify your user identity"`.
+- The response **lacks a `WWW-Authenticate` header**.
+- The PRM endpoints
+  (`/.well-known/oauth-protected-resource` and subpath) return
+  **405 Method Not Allowed**
+  (not the expected 200 OK with metadata).
+- OAuth discovery configuration via PRM is therefore
+  **unavailable** or **unreachable**.
 
-**a) Semantic Clarity:**
-- In JSON-RPC 2.0, `"id": null` creates ambiguity: is this a request expecting
-  a response, or an improperly formatted notification?
-- MCP eliminates this: notifications have NO id field; requests have non-null
-  ids
+---
 
-**b)
-exit status 2
+### 2. Relevant Specification Requirements
+
+#### MCP 2025-11-25 (MCP Spec for OAuth)
+- Section 4.4 (Authentication and OAuth Discovery) requires:
+  - When an endpoint requires authentication, the server
+    **MUST** respond with a `401 Unauthorized` status
+    **including** a `WWW-Authenticate` header indicating the
+    authentication scheme(s).
+  - The client relies on this header to understand how to
+    authenticate (e.g., Bearer tokens as per RFC 6750).
+- Section 5 (OAuth Discovery) requires:
+  - The OAuth Protected Resource Metadata (PRM) endpoint
+    **MUST** exist and respond with a `200 OK` and a JSON
+    document describing the OAuth configuration
+    (see RFC 8414, RFC 9728).
+  - This metadata enables clients to perform OAuth
+    discovery — learn the authorization, token endpoints,
+    and supported features.
+- When OAuth discovery is not provided, the MCP server
+  **MUST** document the non-OAuth authentication mechanism
+  clearly so clients can interact correctly.
+
+#### RFC 9728 (OAuth Metadata for Resource Servers)
+- Defines that the **protected resource** must expose OAuth
+  metadata at a well-known URI
+  (e.g., `/.well-known/oauth-protected-resource`).
+- The resource server **MUST** respond to a GET request to
+  this URI with **200 OK** and a JSON payload containing
+  OAuth metadata.
+- The 405 (Method Not Allowed) response here violates this.
+
+#### RFC 8414 (OAuth 2.0 Authorization Server Metadata)
+- Sets expectations for OAuth discovery metadata endpoints
+  (authorization server side).
+- By analogy and extension in MCP, clients expect metadata
+  for resource servers per RFC 9728.
+
+#### HTTP Semantics (RFC 7235 - Authentication)
+- A `401 Unauthorized` response **MUST** include a
+  `WWW-Authenticate` header indicating the authentication
+  challenge.
+- Servers omitting `WWW-Authenticate` in a 401 response
+  violate this and leave clients guessing how to
+  authenticate.
+
+---
+
+### 3. Why Is This a Valid and Justified Failure?
+
+- The server requires authentication for the `initialize`
+  method, but provides **no information to clients on how
+  to authenticate**:
+  - Missing `WWW-Authenticate` header after 401.
+  - No exposed OAuth discovery metadata
+    (missing / malformed PRM endpoint).
+- This incomplete and non-compliant implementation breaks
+  the fundamental client discovery and authentication flow
+  defined in MCP and OAuth specs.
+- `405` on the PRM endpoint is an invalid response because
+  the metadata endpoint is **expected to support GET** and
+  respond with valid metadata (RFC 9728).
+- Consequently, clients cannot discover or execute OAuth
+  authentication, causing interoperability failures.
+
+---
+
+### 4. Correct Server Behavior per Specifications
+
+| Requirement                                              | Correct Behavior                                                                           |
+|----------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| **Handling 401 Unauthorized**<br>**with OAuth**<br>(MCP 2025-11-25, RFC 7235) | Respond with HTTP 401 **including a `WWW-Authenticate` header**,<br>e.g., `WWW-Authenticate: Bearer realm="aws-mcp", error="invalid_token",`<br>`error_description="Invalid or missing token"`                              |
+| **Expose OAuth Discovery**<br>**Metadata** (RFC 9728)    | Implement a valid PRM endpoint at `https://.../.well-known/oauth-protected-resource`<br>returning **200 OK** with a JSON payload listing authorization servers,<br>token endpoint URLs, supported scopes, token types, etc.    |
+| **Support HTTP GET on**<br>**PRM Endpoint**              | PRM endpoint **must support the GET method** and return JSON metadata, not 405.             |
+| **If Non-OAuth Auth**<br>**is Used** (MCP 2025-11-25)    | Document the authentication mechanism clearly (e.g., AWS SigV4), and do **not** mislead<br>clients by requiring OAuth authentication without discovery metadata or<br>WWW-Authenticate. Servers can omit OAuth metadata but must include correct<br>HTTP auth headers or documentation. |
+
+
+
+
+
+
 
 ```
 
