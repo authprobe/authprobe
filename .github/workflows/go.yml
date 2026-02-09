@@ -22,7 +22,11 @@ jobs:
         go-version: '1.21'
 
     - name: Build
-      run: go build -v ./...
+      run: |
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+        COMMIT=$(git rev-parse --short HEAD)
+        DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        go build -v -ldflags "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE" ./cmd/authprobe
 
     - name: Test
       run: go test -v -coverprofile=coverage.out ./...
