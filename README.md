@@ -66,12 +66,18 @@ AuthProbe helps you isolate failures by capturing network traces for failed prob
 authprobe scan https://mcp.example.com/mcp
 ```
 
+#### Get an RFC-based explanation of the failure
+
+```bash
+authprobe scan https://mcp.example.com/mcp --explain
+```
+
 #### Get verbose output for failure
 
 Shows the complete trace of request/response that went on the wire to help understand failure
 
 ```bash
-authprobe scan https://mcp.example.com/mcp --trace-failure
+authprobe scan https://mcp.example.com/mcp --explain --trace-failure
 ```
 
 #### Have a LLM model explain failure
@@ -80,7 +86,14 @@ Use a LLM to request analysis of failure. `llm-max-tokens` defaults to `600` if 
 
 ```bash
 export OPENAI_API_KEY=<key>
-authprobe scan https://mcp.example.com/mcp --trace-failure --llm-max-tokens=1080
+authprobe scan https://mcp.example.com/mcp --explain --trace-failure --llm-max-tokens=1080
+```
+
+To use Anthropic
+
+```bash
+export ANTHROPIC_API_KEY=<key>
+authprobe scan https://mcp.example.com/mcp --explain --trace-failure --llm-max-tokens=1080
 ```
 
 ## What you get
