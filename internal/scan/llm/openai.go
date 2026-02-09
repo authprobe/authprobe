@@ -1,4 +1,4 @@
-package scan
+package llm
 
 // openai.go - OpenAI API integration for scan explanations
 //
@@ -48,9 +48,8 @@ type openAIOutput struct {
 	Content []openAIContent `json:"content"`
 }
 
-func buildOpenAIExplanation(config ScanConfig, report ScanReport) (string, error) {
-	prompt := buildLLMPrompt(config, report)
-	if strings.TrimSpace(prompt) == "" {
+func buildOpenAIExplanation(req Request) (string, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
 		return "", errors.New("unable to build OpenAI prompt")
 	}
 
@@ -62,7 +61,7 @@ func buildOpenAIExplanation(config ScanConfig, report ScanReport) (string, error
 				Content: []openAIContent{
 					{
 						Type: "input_text",
-						Text: llmSystemPrompt,
+						Text: req.SystemPrompt,
 					},
 				},
 			},
@@ -71,12 +70,12 @@ func buildOpenAIExplanation(config ScanConfig, report ScanReport) (string, error
 				Content: []openAIContent{
 					{
 						Type: "input_text",
-						Text: prompt,
+						Text: req.Prompt,
 					},
 				},
 			},
 		},
-		MaxOutputTokens: config.LLMMaxTokens,
+		MaxOutputTokens: req.MaxTokens,
 	}
 
 	body, err := json.Marshal(payload)
@@ -84,15 +83,15 @@ func buildOpenAIExplanation(config ScanConfig, report ScanReport) (string, error
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, openAIResponsesURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPost, openAIResponsesURL, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+config.OpenAIAPIKey)
-	req.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+req.OpenAIAPIKey)
+	httpReq.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}

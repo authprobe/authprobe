@@ -468,7 +468,11 @@ func TestE2E_MarkdownOutputToFile(t *testing.T) {
 	}
 	md := string(data)
 	if !strings.Contains(md, "# AuthProbe report") {
-		t.Errorf("expected markdown heading '# AuthProbe report', got:\n%s", md[:min(200, len(md))])
+		preview := md
+		if len(preview) > 200 {
+			preview = preview[:200]
+		}
+		t.Errorf("expected markdown heading '# AuthProbe report', got:\n%s", preview)
 	}
 	if !strings.Contains(md, "Scanning:") {
 		t.Error("expected 'Scanning:' in markdown")

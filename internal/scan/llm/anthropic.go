@@ -1,4 +1,4 @@
-package scan
+package llm
 
 // anthropic.go - Anthropic API integration for scan explanations
 //
@@ -45,27 +45,26 @@ type anthropicResponse struct {
 	Content []anthropicContent `json:"content"`
 }
 
-func buildAnthropicExplanation(config ScanConfig, report ScanReport) (string, error) {
-	prompt := buildLLMPrompt(config, report)
-	if strings.TrimSpace(prompt) == "" {
+func buildAnthropicExplanation(req Request) (string, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
 		return "", errors.New("unable to build Anthropic prompt")
 	}
 
 	payload := anthropicRequest{
 		Model:  anthropicModel,
-		System: llmSystemPrompt,
+		System: req.SystemPrompt,
 		Messages: []anthropicMessage{
 			{
 				Role: "user",
 				Content: []anthropicContent{
 					{
 						Type: "text",
-						Text: prompt,
+						Text: req.Prompt,
 					},
 				},
 			},
 		},
-		MaxTokens: config.LLMMaxTokens,
+		MaxTokens: req.MaxTokens,
 	}
 
 	body, err := json.Marshal(payload)
@@ -73,16 +72,16 @@ func buildAnthropicExplanation(config ScanConfig, report ScanReport) (string, er
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, anthropicMessagesURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPost, anthropicMessagesURL, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("x-api-key", config.AnthropicAPIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
+	httpReq.Header.Set("x-api-key", req.AnthropicAPIKey)
+	httpReq.Header.Set("anthropic-version", "2023-06-01")
+	httpReq.Header.Set("content-type", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}

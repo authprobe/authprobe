@@ -1,18 +1,22 @@
 package scan
 
-// llm.go - LLM selection for scan explanations
+// llm.go - LLM prompt construction for scan explanations
 //
 // Function Index:
 // ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
 // │ Function                            │ Purpose                                                    │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ buildLLMExplanation                 │ Dispatch explanation generation to configured provider     │
-// │ buildLLMPrompt                      │ Construct the prompt for LLM responses                     │
+// │ buildLLMExplanation                 │ Build prompt from scan results and dispatch to LLM provider│
+// │ buildLLMPrompt                      │ Construct the prompt text from scan report data             │
 // └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+//
+// LLM provider implementations (OpenAI, Anthropic) are in internal/scan/llm/.
 
 import (
 	"fmt"
 	"strings"
+
+	"authprobe/internal/scan/llm"
 )
 
 const llmSystemPrompt = "You are a compliance analyst for MCP OAuth servers. " +
@@ -33,17 +37,13 @@ const llmSystemPrompt = "You are a compliance analyst for MCP OAuth servers. " +
 //   - string: LLM-generated explanation text
 //   - error: Non-nil if no API key provided or API call fails
 func buildLLMExplanation(config ScanConfig, report ScanReport) (string, error) {
-	// Use default max tokens if not set
-	if config.LLMMaxTokens <= 0 {
-		config.LLMMaxTokens = 700
-	}
-	if config.OpenAIAPIKey != "" {
-		return buildOpenAIExplanation(config, report)
-	}
-	if config.AnthropicAPIKey != "" {
-		return buildAnthropicExplanation(config, report)
-	}
-	return "", fmt.Errorf("missing LLM API key (provide --openai-api-key or --anthropic-api-key)")
+	return llm.BuildExplanation(llm.Request{
+		OpenAIAPIKey:    config.OpenAIAPIKey,
+		AnthropicAPIKey: config.AnthropicAPIKey,
+		MaxTokens:       config.LLMMaxTokens,
+		SystemPrompt:    llmSystemPrompt,
+		Prompt:          buildLLMPrompt(config, report),
+	})
 }
 
 // buildLLMPrompt constructs the prompt sent to the LLM for scan explanation.
@@ -65,7 +65,7 @@ func buildLLMExplanation(config ScanConfig, report ScanReport) (string, error) {
 //  5. All findings: Lists each finding with its code, severity, confidence,
 //     and all evidence lines. This provides the diagnostic details.
 //
-//  6. Primary Finding: Highlights the highest-priority finding separately.
+//  6. Primary finding: Highlights the highest-priority finding separately.
 //     When multiple findings exist, the LLM is instructed to focus on this one.
 //
 // Inputs:
