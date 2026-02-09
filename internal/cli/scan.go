@@ -65,6 +65,7 @@ type scanConfig struct {
 	LLMExplain          bool
 	OpenAIAPIKey        string
 	AnthropicAPIKey     string
+	LLMMaxTokens        int    // Max output tokens for LLM explanation (default: 700)
 	FailOn              string // Severity threshold for exit code 2: none, low, medium, high
 	MCPMode             string
 	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
