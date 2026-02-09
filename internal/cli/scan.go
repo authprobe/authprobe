@@ -120,6 +120,7 @@ type traceEntry struct {
 	URL             string            `json:"url"`
 	Status          int               `json:"status"`
 	StatusLine      string            `json:"status_line,omitempty"`
+	Reason          string            `json:"reason,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty"`
 	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
 	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
@@ -205,7 +206,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	}
 
 	// Add this request/response pair to the trace for later analysis
-	addTrace(trace, req, resp, config.Redact)
+	addTrace(trace, req, resp, config.Redact, "401 + WWW-Authenticate discovery")
 
 	// MCP 2025-11-25 Streamable HTTP: A GET request with Accept: text/event-stream
 	// MUST return Content-Type: text/event-stream for SSE streaming.
@@ -1395,7 +1396,7 @@ func postDCRProbe(client *http.Client, config scanConfig, endpoint string, paylo
 			return resp, respBody, err
 		}
 	}
-	addTrace(trace, req, resp, config.Redact)
+	addTrace(trace, req, resp, config.Redact, verboseLabel)
 
 	return resp, respBody, nil
 }
@@ -1575,7 +1576,7 @@ func postJSONRPCBytes(client *http.Client, config scanConfig, target string, bod
 			return resp, respBody, nil, err
 		}
 	}
-	addTrace(trace, req, resp, config.Redact)
+	addTrace(trace, req, resp, config.Redact, verboseLabel)
 
 	var parsed jsonRPCResponse
 	if len(respBody) > 0 {

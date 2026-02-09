@@ -483,8 +483,15 @@ func buildTraceASCII(entries []traceEntry) string {
 		}
 		requestLine := fmt.Sprintf("%s %s", entry.Method, fullURL)
 		responseLine := fmt.Sprintf("%s", statusLine)
+		reasonLine := ""
+		if entry.Reason != "" {
+			reasonLine = fmt.Sprintf("Reason: %s", entry.Reason)
+		}
 		if targetColumn == "AUTH" {
 			writeTraceLine(&out, requestLine)
+			if reasonLine != "" {
+				writeTraceLine(&out, reasonLine)
+			}
 			writeTraceHeaderLines(&out, entry.RequestHeaders)
 			fmt.Fprintf(&out, "        ├──────────────────────────────────────────────────────────────────┼─►│\n")
 			writeTraceLine(&out, responseLine)
@@ -492,6 +499,9 @@ func buildTraceASCII(entries []traceEntry) string {
 			fmt.Fprintf(&out, "        │◄─────────────────────────────────────────────────────────────────┼  ┤\n")
 		} else {
 			writeTraceLine(&out, requestLine)
+			if reasonLine != "" {
+				writeTraceLine(&out, reasonLine)
+			}
 			writeTraceHeaderLines(&out, entry.RequestHeaders)
 			fmt.Fprintf(&out, "        ├─────────────────────────────────────────────────────────────────►│\n")
 			writeTraceLine(&out, responseLine)
@@ -514,7 +524,7 @@ func writeTraceLine(out *strings.Builder, content string) {
 }
 
 func writeTraceStepBanner(out *strings.Builder, step string) {
-	fmt.Fprintf(out, "        │ ╔═══ %-*s ═══════╪══════════════════════════════════╗\n", traceStepWidth, step)
+	fmt.Fprintf(out, "        │ ╔═══ %-*s ═══════╪═══════════════════╗\n", traceStepWidth, step)
 }
 
 func writeTraceHeaderLines(out *strings.Builder, headers map[string]string) {

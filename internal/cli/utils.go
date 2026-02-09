@@ -1206,13 +1206,14 @@ func severityRank(severity string) int {
 }
 
 // addTrace adds an HTTP request/response to the trace log.
-func addTrace(trace *[]traceEntry, req *http.Request, resp *http.Response, redact bool) {
+func addTrace(trace *[]traceEntry, req *http.Request, resp *http.Response, redact bool, reason string) {
 	entry := traceEntry{
 		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
 		Method:          req.Method,
 		URL:             req.URL.String(),
 		Status:          resp.StatusCode,
 		StatusLine:      resp.Status,
+		Reason:          reason,
 		Headers:         sanitizeHeadersForTrace(resp.Header, redact),
 		RequestHeaders:  sanitizeRequestHeadersForTrace(req, redact),
 		ResponseHeaders: sanitizeHeadersForTrace(resp.Header, redact),
@@ -1302,7 +1303,7 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 				return resp, body, err
 			}
 		}
-		addTrace(trace, req, resp, config.Redact)
+		addTrace(trace, req, resp, config.Redact, verboseLabel)
 		if !isRedirectStatus(resp.StatusCode) || config.NoFollowRedirects {
 			return resp, body, nil
 		}
@@ -1369,6 +1370,6 @@ func postTokenProbe(client *http.Client, config scanConfig, target string, trace
 			return resp, body, err
 		}
 	}
-	addTrace(trace, req, resp, config.Redact)
+	addTrace(trace, req, resp, config.Redact, verboseLabel)
 	return resp, body, nil
 }
