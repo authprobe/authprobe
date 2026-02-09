@@ -51,6 +51,7 @@ type funnel struct {
 	trace         []TraceEntry // HTTP request/response log for evidence collection and debugging
 	stdout        io.Writer
 	verboseOutput io.Writer
+	failedTestLog string
 
 	// Results accumulated from steps
 	findings           []Finding
@@ -440,6 +441,9 @@ func (f *funnel) run() error {
 
 		step.Status = status
 		step.Detail = detail
+		if step.Status == "FAIL" {
+			f.captureFailedTestVerbose(stepDef)
+		}
 		f.findings = append(f.findings, findings...)
 		f.steps = append(f.steps, step)
 	}
@@ -477,6 +481,11 @@ func (f *funnel) buildScanSummary(report ScanReport) ScanSummary {
 	if traceASCII != "" {
 		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceASCII + "\n"
 	}
+	if strings.TrimSpace(f.failedTestLog) != "" {
+		trimmed := strings.TrimSpace(f.failedTestLog)
+		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\nFailed Test Verbose Output\n" + trimmed + "\n"
+		summary.MD = strings.TrimSpace(summary.MD) + "\n\n## Failed Test Verbose Output\n\n```\n" + trimmed + "\n```\n"
+	}
 	if f.config.LLMExplain {
 		explanation, err := buildLLMExplanation(f.config, report)
 		if err != nil {
@@ -490,6 +499,46 @@ func (f *funnel) buildScanSummary(report ScanReport) ScanSummary {
 	}
 	summary.Trace = f.trace
 	return summary
+}
+
+func (f *funnel) captureFailedTestVerbose(stepDef stepDef) {
+	var buffer strings.Builder
+	verboseFunnel := f.cloneForVerbose(&buffer)
+	_, _, _, err := stepDef.Run(verboseFunnel)
+	if err != nil {
+		fmt.Fprintf(&buffer, "\nFailed to rerun step for verbose output: %v\n", err)
+	}
+	trimmed := strings.TrimSpace(buffer.String())
+	if trimmed == "" {
+		return
+	}
+	if f.failedTestLog != "" {
+		f.failedTestLog += "\n\n"
+	}
+	f.failedTestLog += trimmed
+}
+
+func (f *funnel) cloneForVerbose(output io.Writer) *funnel {
+	config := f.config
+	config.Verbose = true
+	return &funnel{
+		client:             f.client,
+		config:             config,
+		trace:              []TraceEntry{},
+		stdout:             f.stdout,
+		verboseOutput:      output,
+		findings:           []Finding{},
+		steps:              []ScanStep{},
+		resourceMetadata:   f.resourceMetadata,
+		resolvedTarget:     f.resolvedTarget,
+		authRequired:       f.authRequired,
+		prmResult:          f.prmResult,
+		prmOK:              f.prmOK,
+		oauthDiscoveryOK:   f.oauthDiscoveryOK,
+		authMetadata:       f.authMetadata,
+		authzMetadataOK:    f.authzMetadataOK,
+		mcpAuthObservation: f.mcpAuthObservation,
+	}
 }
 
 // RunScanFunnel is the main entry point for running the scan funnel.
