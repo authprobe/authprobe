@@ -30,6 +30,34 @@ import (
 	"authprobe/internal/scan"
 )
 
+type VersionInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
+var versionInfo = VersionInfo{
+	Version: "dev",
+	Commit:  "none",
+	Date:    "unknown",
+}
+
+func SetVersionInfo(info VersionInfo) {
+	if info.Version != "" {
+		versionInfo.Version = info.Version
+	}
+	if info.Commit != "" {
+		versionInfo.Commit = info.Commit
+	}
+	if info.Date != "" {
+		versionInfo.Date = info.Date
+	}
+}
+
+func VersionString() string {
+	return fmt.Sprintf("authprobe %s (commit %s, built %s)", versionInfo.Version, versionInfo.Commit, versionInfo.Date)
+}
+
 type stringSlice []string
 
 func (s *stringSlice) String() string {
@@ -48,6 +76,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "--version", "version":
+		fmt.Fprintln(stdout, VersionString())
+		return 0
 	case "scan":
 		return runScan(args[1:], stdout, stderr)
 	default:

@@ -50,6 +50,12 @@ git clone https://github.com/authprobe/authprobe.git && \
       go run cmd/authprobe/main.go scan https://mcp.example.com/mcp
 ```
 
+### Check version
+```bash
+authprobe --version
+authprobe dev (commit none, built unknown)
+```
+
 ### Isolating Failure using `authprobe`
 
 AuthProbe helps you isolate failures by capturing network traces for failed probe steps and optionally using an LLM to explain RFC compliance gaps.
