@@ -34,8 +34,12 @@ func normalizeScanArgs(args []string) []string {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
-			flags = append(flags, arg)
-			if _, ok := valueFlags[arg]; ok && !strings.Contains(arg, "=") && i+1 < len(args) {
+			normalizedArg := arg
+			if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && len(arg) > 2 {
+				normalizedArg = "--" + strings.TrimPrefix(arg, "-")
+			}
+			flags = append(flags, normalizedArg)
+			if _, ok := valueFlags[normalizedArg]; ok && !strings.Contains(normalizedArg, "=") && i+1 < len(args) {
 				nextArg := args[i+1]
 				// Don't consume next arg as value if it looks like a URL (positional arg)
 				// or if it looks like another flag (but allow single "-" as a valid value for stdout)

@@ -169,6 +169,11 @@ func TestNormalizeScanArgs(t *testing.T) {
 			want: []string{"--md", "report.md", "https://example.com"},
 		},
 		{
+			name: "single-dash long value flag with trailing verbose",
+			args: []string{"-md", "report.md", "https://example.com", "--verbose"},
+			want: []string{"--md", "report.md", "--verbose", "https://example.com"},
+		},
+		{
 			name: "value flag with dash value before URL",
 			args: []string{"https://example.com", "--md", "-"},
 			want: []string{"--md", "-", "https://example.com"},
