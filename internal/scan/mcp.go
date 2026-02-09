@@ -52,6 +52,12 @@ import (
 // mcpProtocolVersion is the MCP protocol version supported by authprobe.
 const mcpProtocolVersion = "2025-11-25"
 
+type mcpProtocolVersions struct {
+	ClientRequestedVersion  string
+	ServerNegotiatedVersion string
+	ClientEffectiveVersion  string
+}
+
 // JSON-RPC types for MCP communication.
 type jsonRPCRequest struct {
 	JSONRPC string `json:"jsonrpc"`
@@ -130,10 +136,15 @@ type mcpAuthObservation struct {
 //   - []Finding: MCP and JSON-RPC compliance findings discovered during the handshake
 //   - *mcpAuthObservation: Non-nil if initialize returned 401/403, capturing the auth
 //     challenge details (status, error message, WWW-Authenticate) for late auth discovery
-func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdout io.Writer, authRequired bool) (string, string, []Finding, *mcpAuthObservation) {
+func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdout io.Writer, authRequired bool, versions *mcpProtocolVersions) (string, string, []Finding, *mcpAuthObservation) {
 	var evidence strings.Builder
 	findings := []Finding{}
 	var authObservation *mcpAuthObservation
+
+	if versions != nil {
+		versions.ClientRequestedVersion = mcpProtocolVersion
+		versions.ClientEffectiveVersion = mcpProtocolVersion
+	}
 
 	if !authRequired {
 		findings = append(findings, checkInitializeOrdering(client, config, authRequired, trace, stdout)...)
@@ -189,12 +200,20 @@ func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]
 	findings = append(findings, validateJSONRPCResponse(config, initPayload, initRequest.ID, "initialize")...)
 	initResult, capabilities, sessionID, initResultFindings := parseInitializeResult(config, initPayload, initResp)
 	findings = append(findings, initResultFindings...)
+	if versions != nil && initResult != nil {
+		if negotiated, ok := initResult["protocolVersion"].(string); ok {
+			versions.ServerNegotiatedVersion = strings.TrimSpace(negotiated)
+		}
+	}
 
-	notificationFindings, notificationEvidence := sendInitializedNotification(client, config, sessionID, trace, stdout)
+	notificationFindings, notificationEvidence, notificationError := sendInitializedNotification(client, config, sessionID, trace, stdout)
 	if notificationEvidence != "" {
 		fmt.Fprintf(&evidence, "\n%s", notificationEvidence)
 	}
 	findings = append(findings, notificationFindings...)
+	if notificationError != "" {
+		findings = append(findings, buildProtocolNegotiationFinding(config, versions, "notifications/initialized", notificationError)...)
+	}
 
 	findings = append(findings, checkJSONRPCNullID(client, config, sessionID, trace, stdout)...)
 	findings = append(findings, checkJSONRPCNotificationWithID(client, config, sessionID, trace, stdout)...)
@@ -237,7 +256,14 @@ func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]
 		return "FAIL", strings.TrimSpace(evidence.String()), findings, authObservation
 	}
 	if toolsResp.StatusCode != http.StatusOK || toolsPayload == nil || toolsPayload.Error != nil {
-		findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
+		toolsError := jsonRPCErrorMessage(toolsPayload)
+		negotiationFindings := buildProtocolNegotiationFinding(config, versions, "tools/list", toolsError)
+		if len(negotiationFindings) > 0 {
+			findings = append(findings, negotiationFindings...)
+			findings = append(findings, newFindingWithSeverity("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String()), "low"))
+		} else {
+			findings = append(findings, newFinding("MCP_TOOLS_LIST_FAILED", strings.TrimSpace(evidence.String())))
+		}
 		return "FAIL", strings.TrimSpace(evidence.String()), findings, authObservation
 	}
 	findings = append(findings, validateJSONRPCResponse(config, toolsPayload, toolsRequest.ID, "tools/list")...)
@@ -321,15 +347,83 @@ func jsonRPCErrorMessage(payload *jsonRPCResponse) string {
 	return strings.TrimSpace(payload.Error.Message)
 }
 
+func buildProtocolNegotiationFinding(config ScanConfig, versions *mcpProtocolVersions, callName string, errMsg string) []Finding {
+	if versions == nil {
+		return nil
+	}
+	unsupported, supportedVersions := parseUnsupportedProtocolVersion(errMsg)
+	if !unsupported {
+		return nil
+	}
+	if strings.TrimSpace(versions.ServerNegotiatedVersion) == "" {
+		return nil
+	}
+	if strings.TrimSpace(versions.ClientEffectiveVersion) == "" {
+		return nil
+	}
+	if versions.ServerNegotiatedVersion == versions.ClientEffectiveVersion {
+		return nil
+	}
+	evidence := []string{
+		fmt.Sprintf("requested protocolVersion: %s", versions.ClientRequestedVersion),
+		fmt.Sprintf("server negotiated protocolVersion: %s", versions.ServerNegotiatedVersion),
+		fmt.Sprintf("client effective protocolVersion: %s", versions.ClientEffectiveVersion),
+		fmt.Sprintf("%s error: %s", callName, strings.TrimSpace(errMsg)),
+	}
+	if len(supportedVersions) > 0 {
+		evidence = append(evidence, fmt.Sprintf("supported versions: %s", strings.Join(supportedVersions, ", ")))
+	}
+	evidence = append(evidence, fmt.Sprintf("Server negotiated protocolVersion=%s but client continued using %s; retry with negotiated version.", versions.ServerNegotiatedVersion, versions.ClientEffectiveVersion))
+	return []Finding{newFindingWithEvidence("MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED", evidence)}
+}
+
+func parseUnsupportedProtocolVersion(errMsg string) (bool, []string) {
+	trimmed := strings.TrimSpace(errMsg)
+	if trimmed == "" {
+		return false, nil
+	}
+	lower := strings.ToLower(trimmed)
+	if !strings.Contains(lower, "unsupported protocol version") {
+		return false, nil
+	}
+	supported := extractSupportedVersions(trimmed)
+	return true, supported
+}
+
+func extractSupportedVersions(message string) []string {
+	lower := strings.ToLower(message)
+	idx := strings.Index(lower, "supported versions:")
+	if idx == -1 {
+		return nil
+	}
+	segment := message[idx+len("supported versions:"):]
+	if end := strings.Index(segment, ")"); end != -1 {
+		segment = segment[:end]
+	}
+	segment = strings.TrimSpace(segment)
+	if segment == "" {
+		return nil
+	}
+	rawParts := strings.Split(segment, ",")
+	versions := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			versions = append(versions, part)
+		}
+	}
+	return versions
+}
+
 // sendInitializedNotification sends the notifications/initialized per MCP 2025-11-25.
-func sendInitializedNotification(client *http.Client, config ScanConfig, sessionID string, trace *[]TraceEntry, stdout io.Writer) ([]Finding, string) {
+func sendInitializedNotification(client *http.Client, config ScanConfig, sessionID string, trace *[]TraceEntry, stdout io.Writer) ([]Finding, string, string) {
 	notification := jsonRPCRequest{
 		JSONRPC: "2.0",
 		Method:  "notifications/initialized",
 	}
 	resp, body, payload, err := postJSONRPC(client, config, config.Target, notification, sessionID, trace, stdout, "Step 2: MCP initialize + tools/list (notifications/initialized)")
 	if err != nil {
-		return []Finding{newMCPFinding(config, "MCP_NOTIFICATION_FAILED", fmt.Sprintf("notifications/initialized error: %v", err))}, ""
+		return []Finding{newMCPFinding(config, "MCP_NOTIFICATION_FAILED", fmt.Sprintf("notifications/initialized error: %v", err))}, "", fmt.Sprintf("%v", err)
 	}
 	evidence := fmt.Sprintf("notifications/initialized -> %d", resp.StatusCode)
 	findings := []Finding{}
@@ -341,7 +435,7 @@ func sendInitializedNotification(client *http.Client, config ScanConfig, session
 	if len(body) > 0 || payload != nil {
 		findings = append(findings, newMCPFinding(config, "MCP_NOTIFICATION_BODY_PRESENT", "notifications/initialized returned a body"))
 	}
-	return findings, evidence
+	return findings, evidence, jsonRPCErrorMessage(payload)
 }
 
 // checkInitializeOrdering verifies the server enforces initialize-before-other-methods.

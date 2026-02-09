@@ -65,6 +65,7 @@ type funnel struct {
 	authMetadata       authServerMetadataResult
 	authzMetadataOK    bool
 	mcpAuthObservation *mcpAuthObservation
+	mcpProtocol        mcpProtocolVersions
 }
 
 // newFunnel creates a new funnel instance with the given configuration.
@@ -247,7 +248,7 @@ func (f *funnel) runMCPProbe() (string, string, []Finding, error) {
 //   - f.mcpAuthObservation: Stored if 401 received without WWW-Authenticate header
 //   - f.steps[0].Detail: Updated via updateProbeDetailForAuth() if auth discovered late
 func (f *funnel) runMCPInitialize() (string, string, []Finding, error) {
-	status, detail, findings, authObservation := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
+	status, detail, findings, authObservation := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired, &f.mcpProtocol)
 	// Handle late auth discovery: Step 1 may return 405 (method not allowed) but Step 2
 	// reveals auth is required when initialize/tools_list gets 401/403.
 	// This updates authRequired so subsequent steps (PRM, auth server) proceed correctly.
@@ -550,6 +551,7 @@ func (f *funnel) cloneForVerbose(output io.Writer) *funnel {
 		authMetadata:       f.authMetadata,
 		authzMetadataOK:    f.authzMetadataOK,
 		mcpAuthObservation: f.mcpAuthObservation,
+		mcpProtocol:        f.mcpProtocol,
 	}
 }
 

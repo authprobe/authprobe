@@ -1007,6 +1007,8 @@ func findingRFCExplanation(code string) string {
 		return "MCP servers must require initialize before other requests such as tools/list."
 	case "MCP_PROTOCOL_VERSION_MISMATCH":
 		return "MCP version negotiation should be explicit and consistent with the requested protocolVersion."
+	case "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED":
+		return "MCP clients must honor the negotiated protocolVersion returned by initialize; failures indicate version negotiation was not applied."
 	case "MCP_NOTIFICATION_STATUS_INVALID":
 		return "MCP streamable HTTP responses to notifications should return 202 Accepted with no body."
 	case "MCP_NOTIFICATION_BODY_PRESENT":
@@ -1094,6 +1096,7 @@ func findingSeverity(code string) string {
 		"MCP_JSONRPC_RESPONSE_ID_MISMATCH",
 		"MCP_JSONRPC_RESPONSE_INVALID",
 		"MCP_PROTOCOL_VERSION_MISSING",
+		"MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED",
 		"MCP_INITIALIZE_RESULT_INVALID",
 		"MCP_TOOLS_LIST_INVALID",
 		"MCP_TASKS_METHOD_MISSING",

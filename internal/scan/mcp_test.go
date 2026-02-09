@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -15,14 +16,22 @@ type mockMCPServer struct {
 	Tools []MCPToolDetail
 	// SessionID to return in MCP-Session-Id header (optional)
 	SessionID string
+	// InitializeProtocolVersion sets the protocolVersion in initialize result.
+	InitializeProtocolVersion string
 	// InitializeError if set, returns this error from initialize
 	InitializeError *jsonRPCError
+	// InitializeStatusCode overrides the status code for initialize errors.
+	InitializeStatusCode int
 	// ToolsListError if set, returns this error from tools/list
 	ToolsListError *jsonRPCError
+	// ToolsListStatusCode overrides the status code for tools/list errors.
+	ToolsListStatusCode int
 	// RequireSessionID if true, tools/list requires a valid session ID
 	RequireSessionID bool
 	// ReceivedRequests tracks all requests received
 	ReceivedRequests []jsonRPCRequest
+	// ReceivedProtocolVersions tracks MCP-Protocol-Version headers
+	ReceivedProtocolVersions []string
 }
 
 func (m *mockMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +54,7 @@ func (m *mockMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.ReceivedRequests = append(m.ReceivedRequests, req)
+	m.ReceivedProtocolVersions = append(m.ReceivedProtocolVersions, r.Header.Get("MCP-Protocol-Version"))
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -60,6 +70,9 @@ func (m *mockMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (m *mockMCPServer) handleInitialize(w http.ResponseWriter, req jsonRPCRequest) {
 	if m.InitializeError != nil {
+		if m.InitializeStatusCode != 0 {
+			w.WriteHeader(m.InitializeStatusCode)
+		}
 		m.writeErrorResponse(w, req.ID, m.InitializeError)
 		return
 	}
@@ -69,8 +82,12 @@ func (m *mockMCPServer) handleInitialize(w http.ResponseWriter, req jsonRPCReque
 		w.Header().Set("MCP-Session-Id", m.SessionID)
 	}
 
+	protocolVersion := mcpProtocolVersion
+	if strings.TrimSpace(m.InitializeProtocolVersion) != "" {
+		protocolVersion = m.InitializeProtocolVersion
+	}
 	result := map[string]any{
-		"protocolVersion": mcpProtocolVersion,
+		"protocolVersion": protocolVersion,
 		"capabilities": map[string]any{
 			"tools": map[string]any{},
 		},
@@ -94,6 +111,9 @@ func (m *mockMCPServer) handleToolsList(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if m.ToolsListError != nil {
+		if m.ToolsListStatusCode != 0 {
+			w.WriteHeader(m.ToolsListStatusCode)
+		}
 		m.writeErrorResponse(w, req.ID, m.ToolsListError)
 		return
 	}
@@ -421,6 +441,78 @@ func TestFetchMCPTools_ToolWithComplexSchema(t *testing.T) {
 	}
 	if tool.Annotations["category"] != "search" {
 		t.Errorf("expected annotation category 'search', got %v", tool.Annotations["category"])
+	}
+}
+
+func TestMCPProtocolNegotiationNotAppliedPrimaryFinding(t *testing.T) {
+	mockServer := &mockMCPServer{
+		InitializeProtocolVersion: "2025-06-18",
+		ToolsListError: &jsonRPCError{
+			Code:    -32600,
+			Message: "Bad Request: Unsupported protocol version (supported versions: 2025-06-18, 2025-03-26, 2024-11-05, 2024-10-07)",
+		},
+		ToolsListStatusCode: http.StatusBadRequest,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	report, _, err := RunScanFunnel(ScanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+		RFCMode: "off",
+	}, io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("RunScanFunnel failed: %v", err)
+	}
+
+	if report.PrimaryFinding.Code != "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED" {
+		t.Fatalf("expected primary finding MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED, got %q", report.PrimaryFinding.Code)
+	}
+
+	for _, finding := range report.Findings {
+		if finding.Code == "MCP_TOOLS_LIST_FAILED" && finding.Severity == "high" {
+			t.Fatalf("expected tools/list failure to be demoted, got severity %q", finding.Severity)
+		}
+	}
+
+	header := ""
+	for i, req := range mockServer.ReceivedRequests {
+		if req.Method == "tools/list" {
+			if id, ok := req.ID.(float64); ok && id == 2 {
+				header = mockServer.ReceivedProtocolVersions[i]
+				break
+			}
+		}
+	}
+	if header != mcpProtocolVersion {
+		t.Fatalf("expected tools/list to use protocol version %q, got %q", mcpProtocolVersion, header)
+	}
+}
+
+func TestMCPToolsListFailedPrimaryFinding(t *testing.T) {
+	mockServer := &mockMCPServer{
+		ToolsListError: &jsonRPCError{
+			Code:    -32000,
+			Message: "tools/list unavailable",
+		},
+		ToolsListStatusCode: http.StatusBadRequest,
+	}
+
+	server := httptest.NewServer(mockServer)
+	defer server.Close()
+
+	report, _, err := RunScanFunnel(ScanConfig{
+		Target:  server.URL,
+		MCPMode: "best-effort",
+		RFCMode: "off",
+	}, io.Discard, io.Discard)
+	if err != nil {
+		t.Fatalf("RunScanFunnel failed: %v", err)
+	}
+
+	if report.PrimaryFinding.Code != "MCP_TOOLS_LIST_FAILED" {
+		t.Fatalf("expected primary finding MCP_TOOLS_LIST_FAILED, got %q", report.PrimaryFinding.Code)
 	}
 }
 
