@@ -425,12 +425,25 @@ implementation issues.
 
 ### 4. Correct Server Behavior per Specifications
 
-| Requirement                                  | Correct Behavior |
-|----------------------------------------------|------------------|
-| **Handling 401 Unauthorized with OAuth** (MCP 2025-11-25, RFC 7235) | Respond with HTTP 401 **including a `WWW-Authenticate` header**, e.g., `WWW-Authenticate: Bearer realm="aws-mcp", error="invalid_token", error_description="Invalid or missing token"` |
-| **Expose OAuth Discovery Metadata** (RFC 9728) | Implement a valid PRM endpoint at `https://.../.well-known/oauth-protected-resource` returning **200 OK** with a JSON payload listing authorization servers, token endpoint URLs, supported scopes, token types, etc. |
-| **Support HTTP GET on PRM Endpoint** | PRM endpoint **must support the GET method** and return JSON metadata, not 405. |
-| **If Non-OAuth Auth is Used** (MCP 2025-11-25) | Document the authentication mechanism clearly (e.g., AWS SigV4), and do **not** mislead clients by requiring OAuth authentication without discovery metadata or WWW-Authenticate. Servers can omit OAuth metadata but must include correct HTTP auth headers or documentation. |
+- **Handling 401 Unauthorized with OAuth** (MCP 2025-11-25, RFC 7235):
+  Respond with HTTP 401 **including a `WWW-Authenticate` header**,
+  e.g., `WWW-Authenticate: Bearer realm="aws-mcp",
+  error="invalid_token",
+  error_description="Invalid or missing token"`
+- **Expose OAuth Discovery Metadata** (RFC 9728):
+  Implement a valid PRM endpoint at
+  `https://.../.well-known/oauth-protected-resource` returning
+  **200 OK** with a JSON payload listing authorization servers,
+  token endpoint URLs, supported scopes, token types, etc.
+- **Support HTTP GET on PRM Endpoint**:
+  PRM endpoint **must support the GET method** and return JSON
+  metadata, not 405.
+- **If Non-OAuth Auth is Used** (MCP 2025-11-25):
+  Document the authentication mechanism clearly (e.g., AWS SigV4),
+  and do **not** mislead clients by requiring OAuth authentication
+  without discovery metadata or WWW-Authenticate. Servers can omit
+  OAuth metadata but must include correct HTTP auth headers or
+  documentation.
 
 
 
@@ -581,8 +594,17 @@ Action inputs (all optional except `mcp_url`):
 
 ## FAQ
 
-### “Is MCP OAuth really that fragile?”
+### Is MCP OAuth really that fragile?
 It can be. Client discovery behaviors differ, infra strips headers, `.well-known` endpoints get mounted under prefixes, and auth server behavior varies by provider. AuthProbe exists to make that failure surface deterministic.
+
+### Correctness
+AuthProbe is under active development. We have manually verified
+over 100 reported failures against the relevant RFCs to confirm
+that the tool's output matches the specifications. That said,
+there may be corner cases - unusual server configurations, edge
+cases in spec interpretation, or uncommon protocol flows - where
+findings are not fully accurate. If you spot one, please open an
+issue with the scan output (`--json -` or `--bundle`).
 
 ---
 
