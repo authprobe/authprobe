@@ -128,6 +128,32 @@ Primary Finding (HIGH): AUTH_REQUIRED_BUT_NOT_ADVERTISED (confidence 1.00)
       Auth appears required but OAuth discovery was not advertised. Next steps: add
       WWW-Authenticate + PRM for OAuth/MCP discovery, or document the required non-OAuth auth
       (e.g., SigV4).
+
+┌─────────────────────┤ RFC RATIONALE ├──────────────────────┐
+Explain (RFC 9728 rationale)
+1) MCP probe
+- AuthProbe sends an unauthenticated GET to https://aws-mcp.us-east-1.api.aws/mcp.
+- RFC 9728 discovery hinges on a 401 with WWW-Authenticate that includes resource_metadata.
+- resource_metadata hint: (none)
+
+2) MCP initialize + tools/list
+- AuthProbe sends an MCP initialize request followed by tools/list to enumerate server tools.
+
+3) Protected Resource Metadata (PRM) discovery
+- RFC 9728 defines PRM URLs by inserting /.well-known/oauth-protected-resource between the host and path.
+- https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource (root)
+- https://aws-mcp.us-east-1.api.aws/.well-known/oauth-protected-resource/mcp (path-suffix)
+- Because the resource has a path, the path-suffix PRM endpoint is required by RFC 9728.
+- PRM responses must be JSON objects with a resource that matches the target URL; trailing-slash mismatches are warned for compatibility.
+- authorization_servers is required for OAuth discovery; it lists issuer URLs.
+
+4) Authorization server metadata
+- No authorization_servers found in PRM, so AuthProbe skips metadata fetches.
+
+5) Token endpoint readiness (heuristics)
+- AuthProbe sends a safe, invalid grant request to the token endpoint to observe error response behavior.
+- It flags non-JSON responses or HTTP 200 responses that still contain error payloads.
+
 ┌───────────────────────┤ CALL TRACE ├───────────────────────┐
 Call Trace Using: https://github.com/authprobe/authprobe
 
@@ -406,24 +432,73 @@ Common flags:
 - `--timeout <sec>` (default: 8)
 - `--mcp <mode>` (off, best-effort, strict MCP 2025-11-25 conformance checks)
 - `--rfc <mode>` (off, best-effort, strict RFC conformance checks)
-- `--openai-api-key <key>` (or set `OPENAI_API_KEY`; enables LLM explanations)
-- `--anthropic-api-key <key>` (or set `ANTHROPIC_API_KEY`; enables LLM explanations)
 - `--allow-private-issuers` (bypass [SSRF protection](docs/ssrf-protection.md) for internal networks)
 - `--insecure` (skip TLS certificate verification; for dev/testing with self-signed certs)
 - `--no-follow-redirects` (stop at first response; useful for debugging redirect chains)
 - `--fail-on <level>` (exit code 2 if findings at/above severity: none, low, medium, high; default: high)
 - `-v`, `--verbose` (print request/response headers + bodies during scan)
+- `--trace-failure` (include verbose output of failed probe steps in report)
+- `--no-redact` (disable redaction in verbose logs and evidence bundles)
 - `-e`, `--explain` (print RFC rationale for each scan step)
+- `--openai-api-key <key>` (or set `OPENAI_API_KEY`; enables LLM explanations)
+- `--anthropic-api-key <key>` (or set `ANTHROPIC_API_KEY`; enables LLM explanations; if both set, OpenAI is used)
+- `--llm-max-tokens <n>` (max output tokens for LLM explanations; default: 700)
 - `-l`, `--tool-list` (print MCP tool names)
 - `-d`, `--tool-detail <name>` (print a single MCP tool's full JSON definition)
-- Outputs: `--md`, `--json`, `--bundle`, `--output-dir` (use `-` for stdout, e.g., `--json -` or `--md -`)
+- Outputs: `--json`, `--md`, `--trace-ascii`, `--bundle`, `--output-dir` (use `-` for stdout, e.g., `--json -` or `--md -`)
 
 
 Examples:
 ```bash
-authprobe scan https://mcp.example.com/mcp -H "Host: internal.example.com"
-authprobe scan https://mcp.example.com/mcp --md report.md --json report.json --bundle evidence.zip
-authprobe scan https://mcp.example.com/mcp --json - | jq '.findings'
+MCP_URL="https://mcp.example.com/mcp"
+
+# Basic scan
+authprobe scan $MCP_URL
+
+# Custom header (e.g. internal hostname routing)
+authprobe scan $MCP_URL -H "Host: internal.example.com"
+
+# Strict RFC + MCP conformance checks
+authprobe scan $MCP_URL --rfc strict --mcp strict
+
+# Verbose output with failure traces
+authprobe scan $MCP_URL --verbose --trace-failure
+
+# RFC rationale for every probe step
+authprobe scan $MCP_URL --explain
+
+# LLM-powered explanation (OpenAI)
+authprobe scan $MCP_URL --openai-api-key $OPENAI_API_KEY
+
+# CI gate: fail if any medium-or-above finding
+authprobe scan $MCP_URL --fail-on medium
+
+# All outputs at once
+authprobe scan $MCP_URL \
+  --md report.md --json report.json \
+  --trace-ascii trace.txt --bundle evidence.zip
+
+# Stream JSON to jq
+authprobe scan $MCP_URL --json - | jq '.findings'
+
+# Full diagnostic run: strict checks, verbose, failure traces,
+# LLM explanation, all outputs into a directory
+authprobe scan $MCP_URL \
+  --rfc strict --mcp strict \
+  --verbose --trace-failure --explain \
+  --openai-api-key $OPENAI_API_KEY \
+  --output-dir ./scan-results
+
+# Self-signed dev server, no redirects, relaxed failure threshold
+authprobe scan $MCP_URL \
+  --insecure --no-follow-redirects \
+  --allow-private-issuers --fail-on none
+
+# List available MCP tools
+authprobe scan $MCP_URL --tool-list
+
+# Inspect a specific tool definition
+authprobe scan $MCP_URL --tool-detail "my_tool_name"
 ```
 
 ## Outputs (great for CI and GitHub issues)
@@ -467,8 +542,21 @@ jobs:
       - uses: authprobe/authprobe@v0.1.0
         with:
           mcp_url: https://mcp.example.com/mcp
-          args: --fail-on high
+          args: --fail-on medium --rfc strict
 ```
+
+Action inputs (all optional except `mcp_url`):
+
+| Input              | Default                    | Description                                       |
+|--------------------|----------------------------|---------------------------------------------------|
+| `version`          | `latest`                   | Release version (e.g., `v0.1.0` or `latest`)      |
+| `command`          | `scan`                     | AuthProbe command to run                           |
+| `mcp_url`          | —                          | MCP endpoint URL (required when `command=scan`)    |
+| `args`             | `""`                       | Additional CLI flags passed to AuthProbe           |
+| `report_md`        | `authprobe-report.md`      | Markdown report output path (empty to skip)        |
+| `report_json`      | `authprobe-report.json`    | JSON report output path (empty to skip)            |
+| `bundle`           | `authprobe-evidence.zip`   | Evidence bundle output path (empty to skip)        |
+| `upload_artifacts` | `true`                     | Upload reports as workflow artifacts                |
 
 ---
 
@@ -481,13 +569,26 @@ It can be. Client discovery behaviors differ, infra strips headers, `.well-known
 
 ## Contributing
 Contributions that help the ecosystem most:
-- new fixtures (sanitized real-world failure traces)
-- new deterministic guidance examples
-- hardening redaction and report stability
+- Bug reports with scan output (`--json -` or `--bundle`)
+- New test fixtures (sanitized real-world failure traces)
+- Expanded RFC conformance checks or new finding codes
+- Improved redaction, report stability, and output formatting
+- Documentation fixes and additional usage examples
 
 ---
 
 ## Keywords (for humans and search)
-MCP OAuth, Model Context Protocol authentication, OAuth discovery, oauth-protected-resource, `.well-known`, `resource_metadata`, PRM, RFC 9728, RFC 8414, token endpoint parsing, MCP server authentication, OAuth proxy troubleshooting.
+MCP OAuth, Model Context Protocol authentication, MCP 2025-11-25,
+Streamable HTTP, JSON-RPC 2.0, Server-Sent Events (SSE),
+OAuth 2.0 discovery, OAuth proxy troubleshooting,
+Protected Resource Metadata (PRM), `oauth-protected-resource`,
+`.well-known`, `resource_metadata`, `authorization_servers`,
+Dynamic Client Registration (DCR), PKCE S256,
+OIDC discovery, JWKS, JWT,
+`WWW-Authenticate`, Bearer token, `token_endpoint`,
+RFC 9728, RFC 8414, RFC 6749, RFC 6750, RFC 7591,
+RFC 7636, RFC 8707, RFC 7235, RFC 3986, RFC 9110,
+MCP server authentication, MCP conformance testing,
+SSRF protection, redaction, evidence bundle.
 
 ---
