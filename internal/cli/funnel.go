@@ -392,6 +392,10 @@ func (f *funnel) buildScanSummary(report scanReport) scanSummary {
 			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + explanation + "\n"
 		}
 	}
+	traceASCII := buildTraceASCII(f.trace)
+	if traceASCII != "" {
+		summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + traceASCII + "\n"
+	}
 	if f.config.LLMExplain {
 		explanation, err := buildLLMExplanation(f.config, report)
 		if err != nil {

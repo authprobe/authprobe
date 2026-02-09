@@ -52,6 +52,7 @@ func buildSummary(report scanReport) scanSummary {
 	}
 	fmt.Fprintf(&out, "%-10s %s\n", "Scanning:", report.Target)
 	fmt.Fprintf(&out, "%-10s %s\n", "Scan time:", formatHumanTime(report.Timestamp))
+	fmt.Fprintf(&out, "%-10s %s\n", "Github:", "https://github.com/authprobe/authprobe")
 	fmt.Fprintln(&out, "\nFunnel")
 	maxLabel := 0
 	for _, step := range report.Steps {
@@ -446,7 +447,7 @@ func buildTraceJSONL(entries []traceEntry) []byte {
 // buildTraceASCII converts trace entries into an ASCII call trace.
 func buildTraceASCII(entries []traceEntry) string {
 	var out strings.Builder
-	out.WriteString("Call Trace Using https://github.com/authprobe/authprobe\n\n")
+	out.WriteString("Call Trace Using: https://github.com/authprobe/authprobe\n\n")
 	if len(entries) == 0 {
 		out.WriteString("(no trace entries)\n")
 		return out.String()
@@ -498,7 +499,7 @@ func buildTraceASCII(entries []traceEntry) string {
 			fmt.Fprintf(&out, "        │◄─────────────────────────────────────────────────────────────────┤\n")
 		}
 		if i < len(entries)-1 {
-			out.WriteString("        │                                                                    │  │\n")
+			out.WriteString("        │                                                                  │\n")
 		}
 	}
 	out.WriteString("        ▼                                                                  ▼\n")
