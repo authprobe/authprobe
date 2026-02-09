@@ -16,7 +16,6 @@ package cli
 // │ Skip Conditions                     │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ (f) skipIfMCPDisabled               │ Skip if MCP mode is off                                    │
-// │ (f) skipIfAuthNotRequired           │ Skip if auth not required (no 401)                         │
 // │ (f) skipIfNoAuthServers             │ Skip if no authorization servers found                     │
 // │ (f) skipIfNoTokenEndpoints          │ Skip if no token endpoints found                           │
 // │ (f) skipIfNoRegistrationEndpoints   │ Skip if no registration endpoints found                    │
@@ -154,13 +153,6 @@ func (f *funnel) getSteps() []stepDef {
 func (f *funnel) skipIfMCPDisabled() (bool, string) {
 	if !mcpModeEnabled(f.config.MCPMode) {
 		return true, "mcp checks disabled"
-	}
-	return false, ""
-}
-
-func (f *funnel) skipIfAuthNotRequired() (bool, string) {
-	if !f.authRequired {
-		return true, "auth not required"
 	}
 	return false, ""
 }
