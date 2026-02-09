@@ -1,4 +1,4 @@
-package cli
+package scan
 
 import (
 	"bytes"
@@ -23,8 +23,8 @@ func TestProbeMCPAuthRequiredWithResourceMetadata(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	var stdout bytes.Buffer
-	trace := []traceEntry{}
-	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(&http.Client{}, scanConfig{Target: server.URL}, &trace, &stdout)
+	trace := []TraceEntry{}
+	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(&http.Client{}, ScanConfig{Target: server.URL}, &trace, &stdout)
 	if err != nil {
 		t.Fatalf("probeMCP returned error: %v", err)
 	}
@@ -64,8 +64,8 @@ func TestProbeMCPAuthNotRequiredSkipsAuthChecks(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	var stdout bytes.Buffer
-	trace := []traceEntry{}
-	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(&http.Client{}, scanConfig{Target: server.URL}, &trace, &stdout)
+	trace := []TraceEntry{}
+	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(&http.Client{}, ScanConfig{Target: server.URL}, &trace, &stdout)
 	if err != nil {
 		t.Fatalf("probeMCP returned error: %v", err)
 	}

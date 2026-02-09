@@ -1,13 +1,13 @@
-package cli
+package scan
 
-// anthropic.go - Anthropic API integration for scan explanations
+// openai.go - OpenAI API integration for scan explanations
 //
 // Function Index:
 // ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
 // │ Function                            │ Purpose                                                    │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ buildAnthropicExplanation           │ Generate a detailed, spec-focused explanation via Anthropic│
-// │ extractAnthropicOutputText          │ Extract text from Anthropic responses payload              │
+// │ buildOpenAIExplanation              │ Generate a detailed, spec-focused explanation via OpenAI   │
+// │ extractOpenAIOutputText             │ Extract text from OpenAI responses payload                 │
 // └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 
 import (
@@ -21,51 +21,62 @@ import (
 	"time"
 )
 
-const anthropicMessagesURL = "https://api.anthropic.com/v1/messages"
-const anthropicModel = "claude-sonnet-4-5-20250929"
+const openAIResponsesURL = "https://api.openai.com/v1/responses"
+const openAIModel = "gpt-4.1-mini"
 
-type anthropicRequest struct {
-	Model     string             `json:"model"`
-	System    string             `json:"system"`
-	Messages  []anthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
+type openAIRequest struct {
+	Model           string          `json:"model"`
+	Input           []openAIMessage `json:"input"`
+	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
 }
 
-type anthropicMessage struct {
-	Role    string             `json:"role"`
-	Content []anthropicContent `json:"content"`
+type openAIMessage struct {
+	Role    string          `json:"role"`
+	Content []openAIContent `json:"content"`
 }
 
-type anthropicContent struct {
+type openAIContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-type anthropicResponse struct {
-	Content []anthropicContent `json:"content"`
+type openAIResponse struct {
+	Output []openAIOutput `json:"output"`
 }
 
-func buildAnthropicExplanation(config scanConfig, report scanReport) (string, error) {
+type openAIOutput struct {
+	Content []openAIContent `json:"content"`
+}
+
+func buildOpenAIExplanation(config ScanConfig, report ScanReport) (string, error) {
 	prompt := buildLLMPrompt(config, report)
 	if strings.TrimSpace(prompt) == "" {
-		return "", errors.New("unable to build Anthropic prompt")
+		return "", errors.New("unable to build OpenAI prompt")
 	}
 
-	payload := anthropicRequest{
-		Model:  anthropicModel,
-		System: llmSystemPrompt,
-		Messages: []anthropicMessage{
+	payload := openAIRequest{
+		Model: openAIModel,
+		Input: []openAIMessage{
+			{
+				Role: "system",
+				Content: []openAIContent{
+					{
+						Type: "input_text",
+						Text: llmSystemPrompt,
+					},
+				},
+			},
 			{
 				Role: "user",
-				Content: []anthropicContent{
+				Content: []openAIContent{
 					{
-						Type: "text",
+						Type: "input_text",
 						Text: prompt,
 					},
 				},
 			},
 		},
-		MaxTokens: config.LLMMaxTokens,
+		MaxOutputTokens: config.LLMMaxTokens,
 	}
 
 	body, err := json.Marshal(payload)
@@ -73,13 +84,12 @@ func buildAnthropicExplanation(config scanConfig, report scanReport) (string, er
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, anthropicMessagesURL, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, openAIResponsesURL, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("x-api-key", config.AnthropicAPIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+config.OpenAIAPIKey)
+	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
@@ -93,25 +103,27 @@ func buildAnthropicExplanation(config scanConfig, report scanReport) (string, er
 		return "", fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("anthropic api status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return "", fmt.Errorf("openai api status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
-	var decoded anthropicResponse
+	var decoded openAIResponse
 	if err := json.Unmarshal(respBody, &decoded); err != nil {
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 
-	explanation := extractAnthropicOutputText(decoded)
+	explanation := extractOpenAIOutputText(decoded)
 	if explanation == "" {
-		return "", errors.New("anthropic response missing text output")
+		return "", errors.New("openai response missing text output")
 	}
 	return explanation, nil
 }
 
-func extractAnthropicOutputText(resp anthropicResponse) string {
-	for _, content := range resp.Content {
-		if strings.TrimSpace(content.Text) != "" {
-			return strings.TrimSpace(content.Text)
+func extractOpenAIOutputText(resp openAIResponse) string {
+	for _, output := range resp.Output {
+		for _, content := range output.Content {
+			if strings.TrimSpace(content.Text) != "" {
+				return strings.TrimSpace(content.Text)
+			}
 		}
 	}
 	return ""

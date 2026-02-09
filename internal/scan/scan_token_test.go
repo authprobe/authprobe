@@ -1,4 +1,4 @@
-package cli
+package scan
 
 import (
 	"bytes"
@@ -21,10 +21,10 @@ func TestTokenEndpointNotJSONRisk(t *testing.T) {
 	report := runScanForServer(t, server.URL+"/mcp")
 
 	if !hasFinding(report.Findings, "TOKEN_RESPONSE_NOT_JSON_RISK") {
-		t.Fatalf("expected TOKEN_RESPONSE_NOT_JSON_RISK finding")
+		t.Fatalf("expected TOKEN_RESPONSE_NOT_JSON_RISK Finding")
 	}
 	if hasFinding(report.Findings, "TOKEN_HTTP200_ERROR_PAYLOAD_RISK") {
-		t.Fatalf("did not expect TOKEN_HTTP200_ERROR_PAYLOAD_RISK finding")
+		t.Fatalf("did not expect TOKEN_HTTP200_ERROR_PAYLOAD_RISK Finding")
 	}
 	if step := findStep(report.Steps, 5); step == nil || step.Status != "FAIL" {
 		t.Fatalf("expected step 5 to fail, got %+v", step)
@@ -42,10 +42,10 @@ func TestTokenEndpointHTTP200ErrorPayloadRisk(t *testing.T) {
 	report := runScanForServer(t, server.URL+"/mcp")
 
 	if !hasFinding(report.Findings, "TOKEN_HTTP200_ERROR_PAYLOAD_RISK") {
-		t.Fatalf("expected TOKEN_HTTP200_ERROR_PAYLOAD_RISK finding")
+		t.Fatalf("expected TOKEN_HTTP200_ERROR_PAYLOAD_RISK Finding")
 	}
 	if hasFinding(report.Findings, "TOKEN_RESPONSE_NOT_JSON_RISK") {
-		t.Fatalf("did not expect TOKEN_RESPONSE_NOT_JSON_RISK finding")
+		t.Fatalf("did not expect TOKEN_RESPONSE_NOT_JSON_RISK Finding")
 	}
 	if step := findStep(report.Steps, 5); step == nil || step.Status != "FAIL" {
 		t.Fatalf("expected step 5 to fail, got %+v", step)
@@ -90,11 +90,11 @@ func newTokenHeuristicServer(t *testing.T, tokenHandler http.HandlerFunc) *httpt
 	return server
 }
 
-func runScanForServer(t *testing.T, target string) scanReport {
+func runScanForServer(t *testing.T, target string) ScanReport {
 	t.Helper()
 	var stdout bytes.Buffer
 	var verbose bytes.Buffer
-	report, _, err := runScanFunnel(scanConfig{
+	report, _, err := RunScanFunnel(ScanConfig{
 		Target:              target,
 		Timeout:             5 * time.Second,
 		MCPMode:             "best-effort",
@@ -103,12 +103,12 @@ func runScanForServer(t *testing.T, target string) scanReport {
 		Insecure:            true,
 	}, &stdout, &verbose)
 	if err != nil {
-		t.Fatalf("runScanFunnel error: %v", err)
+		t.Fatalf("RunScanFunnel error: %v", err)
 	}
 	return report
 }
 
-func hasFinding(findings []finding, code string) bool {
+func hasFinding(findings []Finding, code string) bool {
 	for _, item := range findings {
 		if item.Code == code {
 			return true
@@ -117,7 +117,7 @@ func hasFinding(findings []finding, code string) bool {
 	return false
 }
 
-func findFinding(findings []finding, code string) *finding {
+func findFinding(findings []Finding, code string) *Finding {
 	for i := range findings {
 		if findings[i].Code == code {
 			return &findings[i]
@@ -126,7 +126,7 @@ func findFinding(findings []finding, code string) *finding {
 	return nil
 }
 
-func findStep(steps []scanStep, id int) *scanStep {
+func findStep(steps []ScanStep, id int) *ScanStep {
 	for i := range steps {
 		if steps[i].ID == id {
 			return &steps[i]

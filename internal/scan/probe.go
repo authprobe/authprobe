@@ -1,6 +1,6 @@
-package cli
+package scan
 
-// scan.go - OAuth discovery probe steps and DCR/token endpoint probes
+// probe.go - OAuth discovery probe steps and DCR/token endpoint probes
 //
 // Function Index:
 // ┌─────────────────────────────────────┬────────────────────────────────────────────────────────────┐
@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-type scanConfig struct {
+type ScanConfig struct {
 	Target              string
 	Command             string // Original command for display
 	Headers             []string
@@ -56,7 +56,7 @@ type scanConfig struct {
 
 const githubURL = "https://github.com/authprobe/authprobe"
 
-type scanReport struct {
+type ScanReport struct {
 	Command         string     `json:"command"`
 	Target          string     `json:"target"`
 	MCPMode         string     `json:"mcp_mode"`
@@ -66,33 +66,33 @@ type scanReport struct {
 	PRMOK           bool       `json:"prm_ok"`
 	OAuthDiscovery  bool       `json:"oauth_discovery_viable"`
 	AuthzMetadataOK bool       `json:"authz_server_metadata_ok"`
-	Steps           []scanStep `json:"steps"`
-	Findings        []finding  `json:"findings"`
-	PrimaryFinding  finding    `json:"primary_finding"`
+	Steps           []ScanStep `json:"steps"`
+	Findings        []Finding  `json:"findings"`
+	PrimaryFinding  Finding    `json:"primary_finding"`
 }
 
-type scanStep struct {
+type ScanStep struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Detail string `json:"detail,omitempty"`
 }
 
-type finding struct {
+type Finding struct {
 	Code       string   `json:"code"`
 	Severity   string   `json:"severity"`
 	Confidence float64  `json:"confidence"`
 	Evidence   []string `json:"evidence,omitempty"`
 }
 
-type scanSummary struct {
+type ScanSummary struct {
 	Stdout string
 	MD     string
 	JSON   []byte
-	Trace  []traceEntry
+	Trace  []TraceEntry
 }
 
-type traceEntry struct {
+type TraceEntry struct {
 	Timestamp       string            `json:"ts"`
 	Method          string            `json:"method"`
 	URL             string            `json:"url"`
@@ -128,7 +128,7 @@ type prmResult struct {
 // Outputs (in order):
 //   - resourceMetadata: URL from WWW-Authenticate resource_metadata param (empty if not found)
 //   - resolvedTarget: The target URL after any redirects (for constructing PRM URLs)
-//   - []finding: MCP/RFC compliance findings (e.g., MCP_GET_NOT_SSE, DISCOVERY_NO_WWW_AUTHENTICATE)
+//   - []Finding: MCP/RFC compliance findings (e.g., MCP_GET_NOT_SSE, DISCOVERY_NO_WWW_AUTHENTICATE)
 //   - summary: Human-readable summary of the probe result
 //   - authRequired: true if 401 received (auth definitely required),
 //     false if 405/200 received (auth status unknown, caller should check PRM)
@@ -140,9 +140,9 @@ type prmResult struct {
 //     	Step 2 will send POST requests (initialize, tools/list) per MCP spec, which may
 //     	reveal auth requirements (401/403) that GET couldn't detect.
 //   - 200 OK: Auth not required (public endpoint). Validates SSE content-type per MCP spec.
-//   - Timeout: Returns MCP_PROBE_TIMEOUT finding (servers must respond promptly per MCP spec).
-func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdout io.Writer) (string, string, []finding, string, bool, error) {
-	findings := []finding{}
+//   - Timeout: Returns MCP_PROBE_TIMEOUT Finding (servers must respond promptly per MCP spec).
+func probeMCP(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdout io.Writer) (string, string, []Finding, string, bool, error) {
+	findings := []Finding{}
 	// Create a GET request to the target MCP endpoint
 	req, err := http.NewRequest(http.MethodGet, config.Target, nil)
 	if err != nil {
@@ -165,7 +165,7 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 	if err != nil {
 		if isTimeoutError(err) {
 			evidence := "probe timed out waiting for response headers; MCP spec requires SSE headers or a 405 for GET Accept: text/event-stream"
-			return "", config.Target, []finding{newFinding("MCP_PROBE_TIMEOUT", evidence)}, evidence, true, nil
+			return "", config.Target, []Finding{newFinding("MCP_PROBE_TIMEOUT", evidence)}, evidence, true, nil
 		}
 		return "", "", nil, "", false, err
 	}
@@ -234,16 +234,16 @@ func probeMCP(client *http.Client, config scanConfig, trace *[]traceEntry, stdou
 //
 // Outputs:
 //   - prmResult: Best matching PRM with Resource, AuthorizationServers, and MetadataFound flag
-//   - []finding: RFC compliance findings (e.g., PRM_RESOURCE_MISMATCH, PRM_MISSING_AUTHORIZATION_SERVERS)
+//   - []Finding: RFC compliance findings (e.g., PRM_RESOURCE_MISMATCH, PRM_MISSING_AUTHORIZATION_SERVERS)
 //   - string: Evidence summary (URLs probed and their HTTP status codes)
 //   - error: Non-nil only for fatal errors (not HTTP 404s)
 //
 // Behavior:
-//   - When authRequiredFromProbe=true (401 from Step 1): 404 from PRM is flagged as a finding
+//   - When authRequiredFromProbe=true (401 from Step 1): 404 from PRM is flagged as a Finding
 //   - When authRequiredFromProbe=false (405 from Step 1): 404 from PRM is normal (no OAuth configured)
 //   - If valid PRM is found with authorization_servers, the caller should set authRequired=true
 //   - Prefers exact resource match; falls back to first usable PRM if no exact match
-func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata string, resolvedTarget string, trace *[]traceEntry, stdout io.Writer, authRequiredFromProbe bool) (prmResult, []finding, string, error) {
+func fetchPRMMatrix(client *http.Client, config ScanConfig, resourceMetadata string, resolvedTarget string, trace *[]TraceEntry, stdout io.Writer, authRequiredFromProbe bool) (prmResult, []Finding, string, error) {
 	candidates, hasPathSuffix, err := buildPRMCandidates(config.Target, resourceMetadata)
 	if err != nil {
 		return prmResult{}, nil, "", err
@@ -252,7 +252,7 @@ func fetchPRMMatrix(client *http.Client, config scanConfig, resourceMetadata str
 	// Normalize resource identifiers so trailing-slash differences can be treated as equivalent.
 	expectedCanonical := canonicalizeResourceURL(expectedResource)
 
-	findings := []finding{}
+	findings := []Finding{}
 	// RFC 3986: Validate URL syntax conformance
 	if rfcModeEnabled(config.RFCMode) {
 		if urlFindings := validateURLString(config.Target, "resource", config, false); len(urlFindings) > 0 {
@@ -520,7 +520,7 @@ type authServerMetadataResult struct {
 //   - stdout: Writer for verbose output
 //
 // Outputs:
-//   - []finding: RFC compliance findings for each issuer:
+//   - []Finding: RFC compliance findings for each issuer:
 //   - AUTH_SERVER_ISSUER_MISMATCH: metadata issuer != expected issuer (MUST violation)
 //   - AUTH_SERVER_METADATA_INVALID: missing required fields or invalid format
 //   - AUTH_SERVER_PKCE_S256_MISSING: no S256 support (SHOULD violation)
@@ -538,8 +538,8 @@ type authServerMetadataResult struct {
 //
 // Security:
 //   - SSRF protection blocks private/loopback issuers unless --allow-private-issuers is set
-func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResult, trace *[]traceEntry, stdout io.Writer) ([]finding, string, authServerMetadataResult, bool) {
-	findings := []finding{}
+func fetchAuthServerMetadata(client *http.Client, config ScanConfig, prm prmResult, trace *[]TraceEntry, stdout io.Writer) ([]Finding, string, authServerMetadataResult, bool) {
+	findings := []Finding{}
 	var evidence strings.Builder
 	result := authServerMetadataResult{}
 	anySuccess := false
@@ -752,8 +752,8 @@ func fetchAuthServerMetadata(client *http.Client, config scanConfig, prm prmResu
 	return findings, strings.TrimSpace(evidence.String()), result, anySuccess
 }
 
-func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEndpoints []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
-	findings := []finding{}
+func probeTokenEndpointReadiness(client *http.Client, config ScanConfig, tokenEndpoints []string, trace *[]TraceEntry, stdout io.Writer) ([]Finding, string) {
+	findings := []Finding{}
 	var evidence strings.Builder
 	for _, endpoint := range tokenEndpoints {
 		if endpoint == "" {
@@ -785,8 +785,8 @@ func probeTokenEndpointReadiness(client *http.Client, config scanConfig, tokenEn
 
 // probeDCREndpoints probes Dynamic Client Registration endpoints (RFC 7591).
 // Tests for: open registration, input validation, and security posture.
-func probeDCREndpoints(client *http.Client, config scanConfig, registrationEndpoints []string, trace *[]traceEntry, stdout io.Writer) ([]finding, string) {
-	findings := []finding{}
+func probeDCREndpoints(client *http.Client, config ScanConfig, registrationEndpoints []string, trace *[]TraceEntry, stdout io.Writer) ([]Finding, string) {
+	findings := []Finding{}
 	var evidence strings.Builder
 	for _, endpoint := range registrationEndpoints {
 		if endpoint == "" {
@@ -823,8 +823,8 @@ func probeDCREndpoints(client *http.Client, config scanConfig, registrationEndpo
 }
 
 // testDCRInputValidation tests DCR endpoint input validation with suspicious values.
-func testDCRInputValidation(client *http.Client, config scanConfig, endpoint string, trace *[]traceEntry, stdout io.Writer) []finding {
-	findings := []finding{}
+func testDCRInputValidation(client *http.Client, config ScanConfig, endpoint string, trace *[]TraceEntry, stdout io.Writer) []Finding {
+	findings := []Finding{}
 
 	// Test: HTTP redirect URI (should be rejected per RFC 6749 Section 3.1.2.1)
 	httpPayload := map[string]any{
@@ -870,7 +870,7 @@ func testDCRInputValidation(client *http.Client, config scanConfig, endpoint str
 }
 
 // postDCRProbe sends a POST request to a DCR endpoint with JSON payload.
-func postDCRProbe(client *http.Client, config scanConfig, endpoint string, payload map[string]any, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
+func postDCRProbe(client *http.Client, config ScanConfig, endpoint string, payload map[string]any, trace *[]TraceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err

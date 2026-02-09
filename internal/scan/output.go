@@ -1,4 +1,4 @@
-package cli
+package scan
 
 // output.go - Output formatting and file writing for scan results
 //
@@ -8,10 +8,10 @@ package cli
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ Summary Building                    │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ buildSummary                        │ Build scanSummary with stdout, markdown, and JSON          │
+// │ buildSummary                        │ Build ScanSummary with stdout, markdown, and JSON          │
 // │ buildScanExplanation                │ Generate human-readable RFC 9728 explanation               │
 // │ renderMarkdown                      │ Generate markdown report from scan results                 │
-// │ appendVerboseMarkdown               │ Append verbose output section to markdown                  │
+// │ AppendVerboseMarkdown               │ Append verbose output section to markdown                  │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ Text Formatting                     │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
@@ -21,7 +21,7 @@ package cli
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ File Output                         │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ writeOutputs                        │ Write scan results to configured output paths              │
+// │ WriteOutputs                        │ Write scan results to configured output paths              │
 // │ resolveOutputPath                   │ Resolve relative path against output directory             │
 // │ writeBundle                         │ Create zip bundle with all outputs                         │
 // │ writeZipFile                        │ Write single file entry to zip archive                     │
@@ -44,8 +44,8 @@ import (
 	"time"
 )
 
-// buildSummary constructs a scanSummary with stdout, markdown, and JSON representations.
-func buildSummary(report scanReport) scanSummary {
+// buildSummary constructs a ScanSummary with stdout, markdown, and JSON representations.
+func buildSummary(report ScanReport) ScanSummary {
 	var out strings.Builder
 	reportGithub := report.Github
 	if reportGithub == "" {
@@ -81,7 +81,7 @@ func buildSummary(report scanReport) scanSummary {
 		}
 	}
 	if report.PrimaryFinding.Code != "" {
-		fmt.Fprintf(&out, "\nPrimary finding (%s): %s (confidence %.2f)\n", strings.ToUpper(report.PrimaryFinding.Severity), report.PrimaryFinding.Code, report.PrimaryFinding.Confidence)
+		fmt.Fprintf(&out, "\nPrimary Finding (%s): %s (confidence %.2f)\n", strings.ToUpper(report.PrimaryFinding.Severity), report.PrimaryFinding.Code, report.PrimaryFinding.Confidence)
 		if len(report.PrimaryFinding.Evidence) > 0 {
 			fmt.Fprintln(&out, "  Evidence:")
 			for _, line := range report.PrimaryFinding.Evidence {
@@ -96,7 +96,7 @@ func buildSummary(report scanReport) scanSummary {
 	md := renderMarkdown(report)
 	jsonBytes, _ := json.MarshalIndent(report, "", "  ")
 
-	return scanSummary{Stdout: stdout, MD: md, JSON: jsonBytes}
+	return ScanSummary{Stdout: stdout, MD: md, JSON: jsonBytes}
 }
 
 // summarizeStepDetail formats step details for console output.
@@ -203,7 +203,7 @@ func statusIndicator(status string) string {
 }
 
 // buildScanExplanation generates a human-readable explanation of the scan process.
-func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult prmResult, authRequired bool) string {
+func buildScanExplanation(config ScanConfig, resourceMetadata string, prmResult prmResult, authRequired bool) string {
 	var out strings.Builder
 	fmt.Fprintln(&out, "Explain (RFC 9728 rationale)")
 	if !authRequired {
@@ -266,7 +266,7 @@ func buildScanExplanation(config scanConfig, resourceMetadata string, prmResult 
 }
 
 // renderMarkdown generates a markdown representation of the scan report.
-func renderMarkdown(report scanReport) string {
+func renderMarkdown(report ScanReport) string {
 	var md strings.Builder
 	reportGithub := report.Github
 	if reportGithub == "" {
@@ -291,7 +291,7 @@ func renderMarkdown(report scanReport) string {
 		fmt.Fprintln(&md)
 	}
 	if report.PrimaryFinding.Code != "" {
-		fmt.Fprintf(&md, "\n## Primary finding\n\n")
+		fmt.Fprintf(&md, "\n## Primary Finding\n\n")
 		fmt.Fprintf(&md, "- Code: %s\n", report.PrimaryFinding.Code)
 		fmt.Fprintf(&md, "- Severity: %s\n", report.PrimaryFinding.Severity)
 		fmt.Fprintf(&md, "- Confidence: %.2f\n", report.PrimaryFinding.Confidence)
@@ -314,8 +314,8 @@ func renderMarkdown(report scanReport) string {
 	return md.String()
 }
 
-// appendVerboseMarkdown appends verbose output to the markdown report.
-func appendVerboseMarkdown(md string, verbose string) string {
+// AppendVerboseMarkdown appends verbose output to the markdown report.
+func AppendVerboseMarkdown(md string, verbose string) string {
 	trimmed := strings.TrimSpace(verbose)
 	if trimmed == "" {
 		return md
@@ -328,8 +328,8 @@ func appendVerboseMarkdown(md string, verbose string) string {
 	return out.String()
 }
 
-// writeOutputs writes the scan results to configured output paths.
-func writeOutputs(report scanReport, summary scanSummary, config scanConfig) error {
+// WriteOutputs writes the scan results to configured output paths.
+func WriteOutputs(report ScanReport, summary ScanSummary, config ScanConfig) error {
 	outputDir := config.OutputDir
 	jsonPath := resolveOutputPath(config.JSONPath, outputDir)
 	mdPath := resolveOutputPath(config.MDPath, outputDir)
@@ -392,7 +392,7 @@ func resolveOutputPath(path string, dir string) string {
 }
 
 // writeBundle creates a zip bundle containing all scan outputs.
-func writeBundle(path string, summary scanSummary) error {
+func writeBundle(path string, summary ScanSummary) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
@@ -441,7 +441,7 @@ func writeZipFile(zipWriter *zip.Writer, name string, payload []byte) error {
 }
 
 // buildTraceJSONL converts trace entries to JSONL format.
-func buildTraceJSONL(entries []traceEntry) []byte {
+func buildTraceJSONL(entries []TraceEntry) []byte {
 	var buffer bytes.Buffer
 	for _, entry := range entries {
 		line, err := json.Marshal(entry)
@@ -455,7 +455,7 @@ func buildTraceJSONL(entries []traceEntry) []byte {
 }
 
 // buildTraceASCII converts trace entries into an ASCII call trace.
-func buildTraceASCII(entries []traceEntry) string {
+func buildTraceASCII(entries []TraceEntry) string {
 	var out strings.Builder
 	out.WriteString("Call Trace Using: " + githubURL + "\n\n")
 	if len(entries) == 0 {
@@ -555,7 +555,7 @@ func writeTraceHeaderLines(out *strings.Builder, headers map[string]string) {
 	}
 }
 
-func traceHosts(entries []traceEntry) (string, string) {
+func traceHosts(entries []TraceEntry) (string, string) {
 	if len(entries) == 0 {
 		return "", ""
 	}
@@ -578,7 +578,7 @@ func hostFromURL(raw string) string {
 	return ""
 }
 
-func traceStep(entry traceEntry, mcpHost string, authHost string) string {
+func traceStep(entry TraceEntry, mcpHost string, authHost string) string {
 	parsed, err := url.Parse(entry.URL)
 	if err != nil {
 		return ""

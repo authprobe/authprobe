@@ -1,4 +1,4 @@
-package cli
+package scan
 
 // utils.go - Utility functions for scan operations
 //
@@ -32,7 +32,7 @@ package cli
 // │ issuerPrivate                       │ Check if issuer URL points to private address              │
 // │ isSafeIconURI                       │ Check if icon URI uses safe scheme (https/data)            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ Finding Helpers                     │                                                            │
+// │ Finding helpers                     │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ newFinding                          │ Create finding with auto severity/confidence               │
 // │ newMCPFinding                       │ Create MCP finding (upgrades severity in strict mode)      │
@@ -44,7 +44,7 @@ package cli
 // │ choosePrimaryFinding                │ Select most important finding from list                    │
 // │ severityRank                        │ Convert severity to numeric rank for comparison            │
 // │ hasHighSeverity                     │ Check if any finding has high severity                     │
-// │ shouldFail                          │ Determine if scan should exit with failure                 │
+// │ ShouldFail                          │ Determine if scan should exit with failure                 │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ HTTP & Header Helpers               │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
@@ -217,8 +217,8 @@ func isSafeIconURI(raw string) bool {
 	return scheme == "https"
 }
 
-// hasHighSeverity checks if any finding has high severity.
-func hasHighSeverity(findings []finding) bool {
+// hasHighSeverity checks if any Finding has high severity.
+func hasHighSeverity(findings []Finding) bool {
 	for _, f := range findings {
 		if f.Severity == "high" {
 			return true
@@ -227,8 +227,8 @@ func hasHighSeverity(findings []finding) bool {
 	return false
 }
 
-// hasSeverityAtLeast checks if any finding meets or exceeds the requested severity.
-func hasSeverityAtLeast(findings []finding, severity string) bool {
+// hasSeverityAtLeast checks if any Finding meets or exceeds the requested severity.
+func hasSeverityAtLeast(findings []Finding, severity string) bool {
 	threshold := severityRank(strings.ToLower(severity))
 	if threshold == 0 {
 		return false
@@ -294,7 +294,7 @@ func tasksAdvertised(initResult map[string]any) bool {
 // applySafeHeaders adds headers to a request, filtering out sensitive ones.
 func applySafeHeaders(req *http.Request, headers []string) error {
 	for _, header := range headers {
-		key, value, err := parseHeader(header)
+		key, value, err := ParseHeader(header)
 		if err != nil {
 			return err
 		}
@@ -314,7 +314,7 @@ func applySafeHeaders(req *http.Request, headers []string) error {
 // applyHeaders adds all headers to a request.
 func applyHeaders(req *http.Request, headers []string) error {
 	for _, header := range headers {
-		key, value, err := parseHeader(header)
+		key, value, err := ParseHeader(header)
 		if err != nil {
 			return err
 		}
@@ -740,7 +740,7 @@ func issuerPrivate(issuer string) bool {
 }
 
 // validateFetchTarget validates a URL for SSRF protection.
-func validateFetchTarget(config scanConfig, target string) error {
+func validateFetchTarget(config ScanConfig, target string) error {
 	if config.AllowPrivateIssuers {
 		return nil
 	}
@@ -771,11 +771,11 @@ func validateFetchTarget(config scanConfig, target string) error {
 }
 
 // validateURLString validates a URL string for RFC 3986 conformance.
-func validateURLString(raw string, label string, config scanConfig, allowRelative bool) []finding {
+func validateURLString(raw string, label string, config ScanConfig, allowRelative bool) []Finding {
 	if !rfcModeEnabled(config.RFCMode) {
 		return nil
 	}
-	findings := []finding{}
+	findings := []Finding{}
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		findings = append(findings, newFinding("RFC3986_INVALID_URI", fmt.Sprintf("%s invalid URI %q (RFC 3986)", label, raw)))
@@ -792,7 +792,7 @@ func validateURLString(raw string, label string, config scanConfig, allowRelativ
 }
 
 // checkEndpointHostMismatch checks if an endpoint host matches the issuer host.
-func checkEndpointHostMismatch(findings *[]finding, endpoint string, issuerHost string, name string) {
+func checkEndpointHostMismatch(findings *[]Finding, endpoint string, issuerHost string, name string) {
 	if endpoint == "" || issuerHost == "" {
 		return
 	}
@@ -810,7 +810,7 @@ func checkEndpointHostMismatch(findings *[]finding, endpoint string, issuerHost 
 }
 
 // statusFromFindings determines the status based on findings.
-func statusFromFindings(findings []finding, authRequired bool) string {
+func statusFromFindings(findings []Finding, authRequired bool) string {
 	if !authRequired {
 		return "SKIP"
 	}
@@ -821,10 +821,10 @@ func statusFromFindings(findings []finding, authRequired bool) string {
 }
 
 // newFinding creates a new finding with the given code and evidence.
-func newFinding(code string, evidence string) finding {
+func newFinding(code string, evidence string) Finding {
 	severity := findingSeverity(code)
 	confidence := findingConfidence(code)
-	f := finding{Code: code, Severity: severity, Confidence: confidence}
+	f := Finding{Code: code, Severity: severity, Confidence: confidence}
 	if evidence != "" {
 		f.Evidence = []string{evidence}
 	}
@@ -835,7 +835,7 @@ func newFinding(code string, evidence string) finding {
 }
 
 // newMCPFinding creates a new MCP finding, upgrading severity in strict mode.
-func newMCPFinding(config scanConfig, code string, evidence string) finding {
+func newMCPFinding(config ScanConfig, code string, evidence string) Finding {
 	if mcpModeStrict(config.MCPMode) && isMCPStrictUpgrade(code) {
 		return newFindingWithSeverity(code, evidence, "high")
 	}
@@ -843,9 +843,9 @@ func newMCPFinding(config scanConfig, code string, evidence string) finding {
 }
 
 // newFindingWithSeverity creates a new finding with explicit severity.
-func newFindingWithSeverity(code string, evidence string, severity string) finding {
+func newFindingWithSeverity(code string, evidence string, severity string) Finding {
 	confidence := findingConfidence(code)
-	f := finding{Code: code, Severity: severity, Confidence: confidence}
+	f := Finding{Code: code, Severity: severity, Confidence: confidence}
 	if evidence != "" {
 		f.Evidence = []string{evidence}
 	}
@@ -877,10 +877,10 @@ func isMCPStrictUpgrade(code string) bool {
 }
 
 // newFindingWithEvidence creates a new finding with multiple evidence lines.
-func newFindingWithEvidence(code string, evidence []string) finding {
+func newFindingWithEvidence(code string, evidence []string) Finding {
 	severity := findingSeverity(code)
 	confidence := findingConfidence(code)
-	f := finding{Code: code, Severity: severity, Confidence: confidence}
+	f := Finding{Code: code, Severity: severity, Confidence: confidence}
 	if len(evidence) > 0 {
 		f.Evidence = evidence
 	}
@@ -890,7 +890,7 @@ func newFindingWithEvidence(code string, evidence []string) finding {
 	return f
 }
 
-func buildAuthDiscoveryUnavailableFinding(observation mcpAuthObservation, prmEvidence string) finding {
+func buildAuthDiscoveryUnavailableFinding(observation mcpAuthObservation, prmEvidence string) Finding {
 	evidence := []string{fmt.Sprintf("initialize -> %d", observation.Status)}
 	if strings.TrimSpace(observation.ErrorMessage) != "" {
 		evidence = append(evidence, fmt.Sprintf("initialize error: %s", strings.TrimSpace(observation.ErrorMessage)))
@@ -916,7 +916,7 @@ func buildAuthDiscoveryUnavailableFinding(observation mcpAuthObservation, prmEvi
 	return newFindingWithEvidence("AUTH_REQUIRED_BUT_NOT_ADVERTISED", evidence)
 }
 
-// findingRFCExplanation returns the RFC explanation for a finding code.
+// findingRFCExplanation returns the RFC explanation for a Finding code.
 func findingRFCExplanation(code string) string {
 	switch code {
 	case "DISCOVERY_NO_WWW_AUTHENTICATE":
@@ -1056,7 +1056,7 @@ func findingRFCExplanation(code string) string {
 	}
 }
 
-// findingSeverity returns the severity level for a finding code.
+// findingSeverity returns the severity level for a Finding code.
 func findingSeverity(code string) string {
 	switch code {
 	case "DISCOVERY_NO_WWW_AUTHENTICATE",
@@ -1133,7 +1133,7 @@ func findingSeverity(code string) string {
 	}
 }
 
-// findingConfidence returns the confidence level for a finding code.
+// findingConfidence returns the confidence level for a Finding code.
 func findingConfidence(code string) float64 {
 	switch code {
 	case "DISCOVERY_ROOT_WELLKNOWN_404":
@@ -1161,21 +1161,21 @@ func findingConfidence(code string) float64 {
 	}
 }
 
-// choosePrimaryFinding selects the most important finding from a list.
-func choosePrimaryFinding(findings []finding) finding {
+// choosePrimaryFinding selects the most important Finding from a list.
+func choosePrimaryFinding(findings []Finding) Finding {
 	if len(findings) == 0 {
-		return finding{}
+		return Finding{}
 	}
-	var candidates []finding
+	var candidates []Finding
 	for _, item := range findings {
 		if severityRank(item.Severity) >= severityRank("high") {
 			candidates = append(candidates, item)
 		}
 	}
 	if len(candidates) == 0 {
-		return finding{}
+		return Finding{}
 	}
-	sorted := make([]finding, len(candidates))
+	sorted := make([]Finding, len(candidates))
 	copy(sorted, candidates)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		si := severityRank(sorted[i].Severity)
@@ -1206,8 +1206,8 @@ func severityRank(severity string) int {
 }
 
 // addTrace adds an HTTP request/response to the trace log.
-func addTrace(trace *[]traceEntry, req *http.Request, resp *http.Response, redact bool, reason string) {
-	entry := traceEntry{
+func addTrace(trace *[]TraceEntry, req *http.Request, resp *http.Response, redact bool, reason string) {
+	entry := TraceEntry{
 		Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
 		Method:          req.Method,
 		URL:             req.URL.String(),
@@ -1232,8 +1232,8 @@ func sanitizeRequestHeadersForTrace(req *http.Request, redact bool) map[string]s
 	return sanitizeHeadersForTrace(headers, redact)
 }
 
-// shouldFail determines if the scan should exit with failure based on findings.
-func shouldFail(primary finding, failOn string) bool {
+// ShouldFail determines if the scan should exit with failure based on findings.
+func ShouldFail(primary Finding, failOn string) bool {
 	if primary.Code == "" {
 		return false
 	}
@@ -1247,7 +1247,7 @@ func shouldFail(primary finding, failOn string) bool {
 const maxMetadataRedirects = 5
 
 // fetchJSON performs an HTTP GET and parses the response body as JSON.
-func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, any, error) {
+func fetchJSON(client *http.Client, config ScanConfig, target string, trace *[]TraceEntry, stdout io.Writer, verboseLabel string) (*http.Response, any, error) {
 	resp, body, err := fetchWithRedirects(client, config, target, trace, stdout, verboseLabel)
 	if err != nil {
 		return resp, nil, err
@@ -1262,7 +1262,7 @@ func fetchJSON(client *http.Client, config scanConfig, target string, trace *[]t
 }
 
 // fetchWithRedirects performs metadata fetches with redirect handling and policy checks (SSRF, RFC 9110).
-func fetchWithRedirects(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
+func fetchWithRedirects(client *http.Client, config ScanConfig, target string, trace *[]TraceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
 	current := target
 	if config.Verbose {
 		writeVerboseHeading(stdout, verboseLabel)
@@ -1333,7 +1333,7 @@ func fetchWithRedirects(client *http.Client, config scanConfig, target string, t
 }
 
 // postTokenProbe sends a probe request to the token endpoint with invalid credentials.
-func postTokenProbe(client *http.Client, config scanConfig, target string, trace *[]traceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
+func postTokenProbe(client *http.Client, config ScanConfig, target string, trace *[]TraceEntry, stdout io.Writer, verboseLabel string) (*http.Response, []byte, error) {
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", "invalid")

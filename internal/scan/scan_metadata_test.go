@@ -1,4 +1,4 @@
-package cli
+package scan
 
 import (
 	"encoding/json"
@@ -29,8 +29,8 @@ func TestFetchAuthServerMetadataWithPathIssuer(t *testing.T) {
 		})
 	})
 
-	trace := []traceEntry{}
-	findings, _, _, _ := fetchAuthServerMetadata(server.Client(), scanConfig{
+	trace := []TraceEntry{}
+	findings, _, _, _ := fetchAuthServerMetadata(server.Client(), ScanConfig{
 		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
 	}, prmResult{
@@ -73,8 +73,8 @@ func TestFetchAuthServerMetadataOIDCAppendFallback(t *testing.T) {
 		})
 	})
 
-	trace := []traceEntry{}
-	findings, evidence, _, _ := fetchAuthServerMetadata(server.Client(), scanConfig{
+	trace := []TraceEntry{}
+	findings, evidence, _, _ := fetchAuthServerMetadata(server.Client(), ScanConfig{
 		RFCMode:             "best-effort",
 		AllowPrivateIssuers: true,
 	}, prmResult{

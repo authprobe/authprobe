@@ -1,4 +1,4 @@
-package cli
+package scan
 
 // llm.go - LLM selection for scan explanations
 //
@@ -32,7 +32,7 @@ const llmSystemPrompt = "You are a compliance analyst for MCP OAuth servers. " +
 // Outputs:
 //   - string: LLM-generated explanation text
 //   - error: Non-nil if no API key provided or API call fails
-func buildLLMExplanation(config scanConfig, report scanReport) (string, error) {
+func buildLLMExplanation(config ScanConfig, report ScanReport) (string, error) {
 	// Use default max tokens if not set
 	if config.LLMMaxTokens <= 0 {
 		config.LLMMaxTokens = 700
@@ -65,7 +65,7 @@ func buildLLMExplanation(config scanConfig, report scanReport) (string, error) {
 //  5. All findings: Lists each finding with its code, severity, confidence,
 //     and all evidence lines. This provides the diagnostic details.
 //
-//  6. Primary finding: Highlights the highest-priority finding separately.
+//  6. Primary Finding: Highlights the highest-priority finding separately.
 //     When multiple findings exist, the LLM is instructed to focus on this one.
 //
 // Inputs:
@@ -74,7 +74,7 @@ func buildLLMExplanation(config scanConfig, report scanReport) (string, error) {
 //
 // Outputs:
 //   - string: Formatted prompt text ready to send to the LLM
-func buildLLMPrompt(_ scanConfig, report scanReport) string {
+func buildLLMPrompt(_ ScanConfig, report ScanReport) string {
 	var out strings.Builder
 	fmt.Fprintln(&out, "Analyze the AuthProbe scan results and explain why the failure is valid and justified, or if not, what should be changed.")
 	fmt.Fprintln(&out, "Include spec references (MCP 2025-11-25, RFC 9728, RFC 8414, JSON-RPC 2.0) and describe correct server behavior.")
@@ -117,16 +117,16 @@ func buildLLMPrompt(_ scanConfig, report scanReport) string {
 	if len(report.Findings) > 0 {
 		fmt.Fprintln(&out, "")
 		fmt.Fprintln(&out, "Findings:")
-		for _, finding := range report.Findings {
-			fmt.Fprintf(&out, "- %s (%s, confidence %.2f)\n", finding.Code, finding.Severity, finding.Confidence)
-			for _, evidence := range finding.Evidence {
+		for _, f := range report.Findings {
+			fmt.Fprintf(&out, "- %s (%s, confidence %.2f)\n", f.Code, f.Severity, f.Confidence)
+			for _, evidence := range f.Evidence {
 				fmt.Fprintf(&out, "  - Evidence: %s\n", evidence)
 			}
 		}
 	}
 	if report.PrimaryFinding.Code != "" {
 		fmt.Fprintln(&out, "")
-		fmt.Fprintf(&out, "Primary finding: %s (%s, confidence %.2f)\n", report.PrimaryFinding.Code, report.PrimaryFinding.Severity, report.PrimaryFinding.Confidence)
+		fmt.Fprintf(&out, "Primary Finding: %s (%s, confidence %.2f)\n", report.PrimaryFinding.Code, report.PrimaryFinding.Severity, report.PrimaryFinding.Confidence)
 		for _, evidence := range report.PrimaryFinding.Evidence {
 			fmt.Fprintf(&out, "- Evidence: %s\n", evidence)
 		}

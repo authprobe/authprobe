@@ -1,4 +1,4 @@
-package cli
+package scan
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 // It handles the initialize and tools/list JSON-RPC methods.
 type mockMCPServer struct {
 	// Tools to return from tools/list
-	Tools []mcpToolDetail
+	Tools []MCPToolDetail
 	// SessionID to return in MCP-Session-Id header (optional)
 	SessionID string
 	// InitializeError if set, returns this error from initialize
@@ -132,7 +132,7 @@ func TestFetchMCPTools_Success(t *testing.T) {
 	// Create a mock MCP server with some tools
 	mockServer := &mockMCPServer{
 		SessionID: "test-session-123",
-		Tools: []mcpToolDetail{
+		Tools: []MCPToolDetail{
 			{
 				Name:        "echo",
 				Description: "Echoes the input back",
@@ -150,16 +150,16 @@ func TestFetchMCPTools_Success(t *testing.T) {
 
 	// Create HTTP client and config
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	// Call fetchMCPTools with a trace slice (required by addTrace)
-	var trace []traceEntry
-	tools, err := fetchMCPTools(client, config, &trace, io.Discard)
+	// Call FetchMCPTools with a trace slice (required by addTrace)
+	var trace []TraceEntry
+	tools, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err != nil {
-		t.Fatalf("fetchMCPTools failed: %v", err)
+		t.Fatalf("FetchMCPTools failed: %v", err)
 	}
 
 	// Verify we got the expected tools
@@ -188,22 +188,22 @@ func TestFetchMCPTools_Success(t *testing.T) {
 
 func TestFetchMCPTools_EmptyToolsList(t *testing.T) {
 	mockServer := &mockMCPServer{
-		Tools: []mcpToolDetail{}, // Empty tools list
+		Tools: []MCPToolDetail{}, // Empty tools list
 	}
 
 	server := httptest.NewServer(mockServer)
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	tools, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	tools, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err != nil {
-		t.Fatalf("fetchMCPTools failed: %v", err)
+		t.Fatalf("FetchMCPTools failed: %v", err)
 	}
 
 	if len(tools) != 0 {
@@ -223,13 +223,13 @@ func TestFetchMCPTools_InitializeError(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	_, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	_, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -252,13 +252,13 @@ func TestFetchMCPTools_ToolsListError(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	_, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	_, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -278,13 +278,13 @@ func TestFetchMCPTools_Unauthorized(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	_, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	_, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -299,7 +299,7 @@ func TestFetchMCPTools_WithSessionIDFromHeader(t *testing.T) {
 	mockServer := &mockMCPServer{
 		SessionID:        "header-session-456",
 		RequireSessionID: true,
-		Tools: []mcpToolDetail{
+		Tools: []MCPToolDetail{
 			{Name: "test-tool"},
 		},
 	}
@@ -308,15 +308,15 @@ func TestFetchMCPTools_WithSessionIDFromHeader(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	tools, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	tools, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err != nil {
-		t.Fatalf("fetchMCPTools failed: %v", err)
+		t.Fatalf("FetchMCPTools failed: %v", err)
 	}
 
 	if len(tools) != 1 {
@@ -326,9 +326,9 @@ func TestFetchMCPTools_WithSessionIDFromHeader(t *testing.T) {
 
 func TestFetchMCPTools_WithManyTools(t *testing.T) {
 	// Create a server with many tools to test pagination-like behavior
-	tools := make([]mcpToolDetail, 50)
+	tools := make([]MCPToolDetail, 50)
 	for i := 0; i < 50; i++ {
-		tools[i] = mcpToolDetail{
+		tools[i] = MCPToolDetail{
 			Name:        "tool-" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
 			Description: "Test tool number " + string(rune('0'+i)),
 		}
@@ -342,15 +342,15 @@ func TestFetchMCPTools_WithManyTools(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	result, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	result, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err != nil {
-		t.Fatalf("fetchMCPTools failed: %v", err)
+		t.Fatalf("FetchMCPTools failed: %v", err)
 	}
 
 	if len(result) != 50 {
@@ -360,7 +360,7 @@ func TestFetchMCPTools_WithManyTools(t *testing.T) {
 
 func TestFetchMCPTools_ToolWithComplexSchema(t *testing.T) {
 	mockServer := &mockMCPServer{
-		Tools: []mcpToolDetail{
+		Tools: []MCPToolDetail{
 			{
 				Name:        "complex-tool",
 				Description: "A tool with complex input/output schemas",
@@ -394,15 +394,15 @@ func TestFetchMCPTools_ToolWithComplexSchema(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
-	tools, err := fetchMCPTools(client, config, &trace, io.Discard)
+	var trace []TraceEntry
+	tools, err := FetchMCPTools(client, config, &trace, io.Discard)
 	if err != nil {
-		t.Fatalf("fetchMCPTools failed: %v", err)
+		t.Fatalf("FetchMCPTools failed: %v", err)
 	}
 
 	if len(tools) != 1 {
@@ -490,12 +490,12 @@ func TestProbeMCP_401WithResourceMetadata(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	resourceMetadata, resolvedTarget, findings, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -542,12 +542,12 @@ func TestProbeMCP_401WithoutResourceMetadata(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	resourceMetadata, _, findings, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -585,12 +585,12 @@ func TestProbeMCP_200OK(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	resourceMetadata, _, findings, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -629,12 +629,12 @@ func TestProbeMCP_200WithWrongContentType(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	_, _, findings, _, authRequired, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -669,12 +669,12 @@ func TestProbeMCP_405MethodNotAllowed(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	_, _, _, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -701,12 +701,12 @@ func TestProbeMCP_403Forbidden(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	_, _, _, summary, authRequired, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -732,13 +732,13 @@ func TestProbeMCP_WithCustomHeaders(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 		Headers: []string{"X-Custom-Header: custom-value", "Authorization: Bearer token123"},
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	_, _, _, _, _, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {
@@ -769,13 +769,13 @@ func TestProbeMCP_VerboseOutput(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "best-effort",
 		Verbose: true,
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	var verboseOutput []byte
 	buf := &captureWriter{buf: &verboseOutput}
 
@@ -818,12 +818,12 @@ func TestProbeMCP_MCPModeOff(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{}
-	config := scanConfig{
+	config := ScanConfig{
 		Target:  server.URL,
 		MCPMode: "off", // MCP mode disabled
 	}
 
-	var trace []traceEntry
+	var trace []TraceEntry
 	_, _, findings, _, _, err := probeMCP(client, config, &trace, io.Discard)
 
 	if err != nil {

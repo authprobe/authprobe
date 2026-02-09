@@ -1,4 +1,4 @@
-package cli
+package scan
 
 // funnel.go - Scan funnel orchestration and step execution
 //
@@ -8,7 +8,7 @@ package cli
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ Orchestration                       │                                                            │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
-// │ runScanFunnel                       │ Main entry point: run complete scan funnel                 │
+// │ RunScanFunnel                       │ Main entry point: run complete scan funnel                 │
 // │ newFunnel                           │ Create new funnel instance with configuration              │
 // │ (f) run                             │ Execute all funnel steps in sequence                       │
 // │ (f) getSteps                        │ Get ordered list of scan step definitions                  │
@@ -47,14 +47,14 @@ import (
 // funnel orchestrates the scan steps and holds shared state.
 type funnel struct {
 	client        *http.Client
-	config        scanConfig
-	trace         []traceEntry // HTTP request/response log for evidence collection and debugging
+	config        ScanConfig
+	trace         []TraceEntry // HTTP request/response log for evidence collection and debugging
 	stdout        io.Writer
 	verboseOutput io.Writer
 
 	// Results accumulated from steps
-	findings           []finding
-	steps              []scanStep
+	findings           []Finding
+	steps              []ScanStep
 	resourceMetadata   string
 	resolvedTarget     string
 	authRequired       bool
@@ -67,7 +67,7 @@ type funnel struct {
 }
 
 // newFunnel creates a new funnel instance with the given configuration.
-func newFunnel(config scanConfig, stdout, verboseOutput io.Writer) *funnel {
+func newFunnel(config ScanConfig, stdout, verboseOutput io.Writer) *funnel {
 	client := &http.Client{Timeout: config.Timeout}
 	if config.Insecure {
 		client.Transport = &http.Transport{
@@ -83,11 +83,11 @@ func newFunnel(config scanConfig, stdout, verboseOutput io.Writer) *funnel {
 	return &funnel{
 		client:        client,
 		config:        config,
-		trace:         []traceEntry{},
+		trace:         []TraceEntry{},
 		stdout:        stdout,
 		verboseOutput: verboseOutput,
-		findings:      []finding{},
-		steps:         []scanStep{},
+		findings:      []Finding{},
+		steps:         []ScanStep{},
 	}
 }
 
@@ -97,7 +97,7 @@ type stepDef struct {
 	Name string
 	Desc string // One-line description for comments/docs
 	Skip func(f *funnel) (bool, string)
-	Run  func(f *funnel) (string, string, []finding, error)
+	Run  func(f *funnel) (string, string, []Finding, error)
 }
 
 // getSteps returns the ordered list of scan steps.
@@ -217,7 +217,7 @@ func (f *funnel) updateProbeDetailForAuth() {
 //   - f.resourceMetadata: URL from WWW-Authenticate resource_metadata param (for Step 3)
 //   - f.resolvedTarget: Final URL after redirects (for constructing PRM URLs)
 //   - f.authRequired: true if 401 received, false if 405/200 (may be updated by Step 2/3)
-func (f *funnel) runMCPProbe() (string, string, []finding, error) {
+func (f *funnel) runMCPProbe() (string, string, []Finding, error) {
 	resourceMetadata, resolvedTarget, findings, evidence, authRequired, err := probeMCP(f.client, f.config, &f.trace, f.verboseOutput)
 	if err != nil {
 		return "", "", nil, err
@@ -245,7 +245,7 @@ func (f *funnel) runMCPProbe() (string, string, []finding, error) {
 //   - f.authRequired: Updated to true if POST returns 401/403 (late auth discovery)
 //   - f.mcpAuthObservation: Stored if 401 received without WWW-Authenticate header
 //   - f.steps[0].Detail: Updated via updateProbeDetailForAuth() if auth discovered late
-func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
+func (f *funnel) runMCPInitialize() (string, string, []Finding, error) {
 	status, detail, findings, authObservation := mcpInitializeAndListTools(f.client, f.config, &f.trace, f.verboseOutput, f.authRequired)
 	// Handle late auth discovery: Step 1 may return 405 (method not allowed) but Step 2
 	// reveals auth is required when initialize/tools_list gets 401/403.
@@ -279,7 +279,7 @@ func (f *funnel) runMCPInitialize() (string, string, []finding, error) {
 //   - Sets f.prmResult with authorization_servers for Step 4
 //   - Sets f.authRequired = true if valid PRM found (enables OAuth discovery)
 //   - Sets f.prmOK and f.oauthDiscoveryOK for status tracking
-func (f *funnel) runPRMFetch() (string, string, []finding, error) {
+func (f *funnel) runPRMFetch() (string, string, []Finding, error) {
 	result, findings, evidence, err := fetchPRMMatrix(f.client, f.config, f.resourceMetadata, f.resolvedTarget, &f.trace, f.verboseOutput, f.authRequired)
 	if err != nil {
 		return "", "", nil, err
@@ -373,7 +373,7 @@ func (f *funnel) runPRMFetch() (string, string, []finding, error) {
 // Side effects (funnel fields set):
 //   - f.authMetadata: Contains TokenEndpoints and RegistrationEndpoints for Steps 5-6
 //   - f.authzMetadataOK: true if at least one auth server metadata was successfully fetched
-func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
+func (f *funnel) runAuthServerMetadata() (string, string, []Finding, error) {
 	findings, evidence, metadata, ok := fetchAuthServerMetadata(f.client, f.config, f.prmResult, &f.trace, f.verboseOutput)
 	f.authMetadata = metadata
 	f.authzMetadataOK = ok
@@ -393,7 +393,7 @@ func (f *funnel) runAuthServerMetadata() (string, string, []finding, error) {
 //   - error: Always nil (errors are captured as findings)
 //
 // Side effects: None (read-only probe)
-func (f *funnel) runTokenEndpoint() (string, string, []finding, error) {
+func (f *funnel) runTokenEndpoint() (string, string, []Finding, error) {
 	findings, evidence := probeTokenEndpointReadiness(f.client, f.config, f.authMetadata.TokenEndpoints, &f.trace, f.verboseOutput)
 	status := statusFromFindings(findings, true)
 	return status, evidence, findings, nil
@@ -411,7 +411,7 @@ func (f *funnel) runTokenEndpoint() (string, string, []finding, error) {
 //   - error: Always nil (errors are captured as findings)
 //
 // Side effects: None (read-only probe, does not actually register clients)
-func (f *funnel) runDCRProbe() (string, string, []finding, error) {
+func (f *funnel) runDCRProbe() (string, string, []Finding, error) {
 	findings, evidence := probeDCREndpoints(f.client, f.config, f.authMetadata.RegistrationEndpoints, &f.trace, f.verboseOutput)
 	status := statusFromFindings(findings, true)
 	return status, evidence, findings, nil
@@ -420,7 +420,7 @@ func (f *funnel) runDCRProbe() (string, string, []finding, error) {
 // run executes all funnel steps and returns the completed report.
 func (f *funnel) run() error {
 	for _, stepDef := range f.getSteps() {
-		step := scanStep{ID: stepDef.ID, Name: stepDef.Name}
+		step := ScanStep{ID: stepDef.ID, Name: stepDef.Name}
 
 		// Check if step should be skipped
 		if stepDef.Skip != nil {
@@ -447,8 +447,8 @@ func (f *funnel) run() error {
 }
 
 // buildReport constructs the final scan report.
-func (f *funnel) buildReport() scanReport {
-	return scanReport{
+func (f *funnel) buildReport() ScanReport {
+	return ScanReport{
 		Command:         f.config.Command,
 		Target:          f.config.Target,
 		MCPMode:         f.config.MCPMode,
@@ -465,7 +465,7 @@ func (f *funnel) buildReport() scanReport {
 }
 
 // buildScanSummary constructs the scan summary with optional explanation.
-func (f *funnel) buildScanSummary(report scanReport) scanSummary {
+func (f *funnel) buildScanSummary(report ScanReport) ScanSummary {
 	summary := buildSummary(report)
 	if f.config.Explain {
 		explanation := buildScanExplanation(f.config, f.resourceMetadata, f.prmResult, f.authRequired)
@@ -492,19 +492,19 @@ func (f *funnel) buildScanSummary(report scanReport) scanSummary {
 	return summary
 }
 
-// runScanFunnel is the main entry point for running the scan funnel.
-func runScanFunnel(config scanConfig, stdout io.Writer, verboseOutput io.Writer) (scanReport, scanSummary, error) {
+// RunScanFunnel is the main entry point for running the scan funnel.
+func RunScanFunnel(config ScanConfig, stdout io.Writer, verboseOutput io.Writer) (ScanReport, ScanSummary, error) {
 	f := newFunnel(config, stdout, verboseOutput)
 
 	if err := f.run(); err != nil {
-		return scanReport{}, scanSummary{}, err
+		return ScanReport{}, ScanSummary{}, err
 	}
 
 	report := f.buildReport()
 	summary := f.buildScanSummary(report)
 
 	if _, err := stdout.Write([]byte(summary.Stdout)); err != nil {
-		return report, scanSummary{}, err
+		return report, ScanSummary{}, err
 	}
 
 	return report, summary, nil

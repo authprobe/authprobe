@@ -1,4 +1,4 @@
-package cli
+package scan
 
 import (
 	"bytes"
@@ -67,12 +67,12 @@ func TestDiscoveryNoWWWAuthenticateButPRMAvailable(t *testing.T) {
 	if hasFinding(report.Findings, "AUTH_REQUIRED_BUT_NOT_ADVERTISED") {
 		t.Fatalf("did not expect AUTH_REQUIRED_BUT_NOT_ADVERTISED when PRM is available")
 	}
-	finding := findFinding(report.Findings, "DISCOVERY_NO_WWW_AUTHENTICATE")
-	if finding == nil {
+	got := findFinding(report.Findings, "DISCOVERY_NO_WWW_AUTHENTICATE")
+	if got == nil {
 		t.Fatalf("expected DISCOVERY_NO_WWW_AUTHENTICATE finding")
 	}
-	if finding.Severity != "low" {
-		t.Fatalf("expected DISCOVERY_NO_WWW_AUTHENTICATE severity low, got %q", finding.Severity)
+	if got.Severity != "low" {
+		t.Fatalf("expected DISCOVERY_NO_WWW_AUTHENTICATE severity low, got %q", got.Severity)
 	}
 	if report.PrimaryFinding.Code != "" {
 		t.Fatalf("expected no primary finding, got %q", report.PrimaryFinding.Code)
@@ -303,11 +303,11 @@ func newDeadEndDiscoveryServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-func runScanForServerAllowNoFindings(t *testing.T, target string) scanReport {
+func runScanForServerAllowNoFindings(t *testing.T, target string) ScanReport {
 	t.Helper()
 	var stdout bytes.Buffer
 	var verbose bytes.Buffer
-	report, _, err := runScanFunnel(scanConfig{
+	report, _, err := RunScanFunnel(ScanConfig{
 		Target:              target,
 		Timeout:             5 * time.Second,
 		MCPMode:             "best-effort",
@@ -316,7 +316,7 @@ func runScanForServerAllowNoFindings(t *testing.T, target string) scanReport {
 		Insecure:            true,
 	}, &stdout, &verbose)
 	if err != nil {
-		t.Fatalf("runScanFunnel error: %v", err)
+		t.Fatalf("RunScanFunnel error: %v", err)
 	}
 	return report
 }

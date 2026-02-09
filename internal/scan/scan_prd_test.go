@@ -1,4 +1,4 @@
-package cli
+package scan
 
 import (
 	"bytes"
@@ -51,12 +51,12 @@ func TestRootPRM404PathPRM200(t *testing.T) {
 	})
 
 	report := runScanWithConfigInsecure(t, baseURL+"/mcp", true, "best-effort")
-	finding := findFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404")
-	if finding == nil {
+	got := findFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404")
+	if got == nil {
 		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 finding")
 	}
-	if finding.Severity != "low" {
-		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 severity low, got %q", finding.Severity)
+	if got.Severity != "low" {
+		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 severity low, got %q", got.Severity)
 	}
 	if report.PrimaryFinding.Code != "" {
 		t.Fatalf("expected no primary finding, got %q", report.PrimaryFinding.Code)
@@ -89,12 +89,12 @@ func TestOriginOnlyRootPRM404Fails(t *testing.T) {
 	})
 
 	report := runScanWithConfigInsecure(t, baseURL, true, "best-effort")
-	finding := findFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404")
-	if finding == nil {
+	got := findFinding(report.Findings, "DISCOVERY_ROOT_WELLKNOWN_404")
+	if got == nil {
 		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 finding")
 	}
-	if finding.Severity != "high" {
-		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 severity high, got %q", finding.Severity)
+	if got.Severity != "high" {
+		t.Fatalf("expected DISCOVERY_ROOT_WELLKNOWN_404 severity high, got %q", got.Severity)
 	}
 	if report.PrimaryFinding.Code != "OAUTH_DISCOVERY_UNAVAILABLE" && report.PrimaryFinding.Code != "DISCOVERY_ROOT_WELLKNOWN_404" {
 		t.Fatalf("expected primary finding OAUTH_DISCOVERY_UNAVAILABLE or DISCOVERY_ROOT_WELLKNOWN_404, got %q", report.PrimaryFinding.Code)
@@ -128,7 +128,7 @@ func TestAllPRMEndpointsFail(t *testing.T) {
 
 	report := runScanWithConfigInsecure(t, baseURL+"/mcp", true, "best-effort")
 	if !hasFinding(report.Findings, "OAUTH_DISCOVERY_UNAVAILABLE") {
-		t.Fatalf("expected OAUTH_DISCOVERY_UNAVAILABLE finding")
+		t.Fatalf("expected OAUTH_DISCOVERY_UNAVAILABLE Finding")
 	}
 	if report.PrimaryFinding.Code != "OAUTH_DISCOVERY_UNAVAILABLE" {
 		t.Fatalf("expected primary finding OAUTH_DISCOVERY_UNAVAILABLE, got %q", report.PrimaryFinding.Code)
@@ -157,7 +157,7 @@ func TestPRMMissingAuthorizationServers(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL, true, "best-effort")
 	if !hasFinding(report.Findings, "PRM_MISSING_AUTHORIZATION_SERVERS") {
-		t.Fatalf("expected PRM_MISSING_AUTHORIZATION_SERVERS finding")
+		t.Fatalf("expected PRM_MISSING_AUTHORIZATION_SERVERS Finding")
 	}
 }
 
@@ -194,7 +194,7 @@ func TestPRMResourceMismatch(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL, true, "best-effort")
 	if !hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
-		t.Fatalf("expected PRM_RESOURCE_MISMATCH finding")
+		t.Fatalf("expected PRM_RESOURCE_MISMATCH Finding")
 	}
 }
 
@@ -238,10 +238,10 @@ func TestPRMResourceExactMatch(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
 	if hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
-		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH finding")
+		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH Finding")
 	}
 	if hasFinding(report.Findings, "PRM_RESOURCE_TRAILING_SLASH") {
-		t.Fatalf("did not expect PRM_RESOURCE_TRAILING_SLASH finding")
+		t.Fatalf("did not expect PRM_RESOURCE_TRAILING_SLASH Finding")
 	}
 }
 
@@ -285,10 +285,10 @@ func TestPRMResourceTrailingSlashWarning(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
 	if !hasFinding(report.Findings, "PRM_RESOURCE_TRAILING_SLASH") {
-		t.Fatalf("expected PRM_RESOURCE_TRAILING_SLASH finding")
+		t.Fatalf("expected PRM_RESOURCE_TRAILING_SLASH Finding")
 	}
 	if hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
-		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH finding")
+		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH Finding")
 	}
 }
 
@@ -332,10 +332,10 @@ func TestPRMResourceMatrixTrailingSlashWarning(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL+"/mcp/", true, "best-effort")
 	if !hasFinding(report.Findings, "PRM_RESOURCE_TRAILING_SLASH") {
-		t.Fatalf("expected PRM_RESOURCE_TRAILING_SLASH finding")
+		t.Fatalf("expected PRM_RESOURCE_TRAILING_SLASH Finding")
 	}
 	if hasFinding(report.Findings, "PRM_RESOURCE_MISMATCH") {
-		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH finding")
+		t.Fatalf("did not expect PRM_RESOURCE_MISMATCH Finding")
 	}
 }
 
@@ -382,7 +382,7 @@ func TestHeaderStrippedByProxySuspected(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
 	if !hasFinding(report.Findings, "HEADER_STRIPPED_BY_PROXY_SUSPECTED") {
-		t.Fatalf("expected HEADER_STRIPPED_BY_PROXY_SUSPECTED finding")
+		t.Fatalf("expected HEADER_STRIPPED_BY_PROXY_SUSPECTED Finding")
 	}
 }
 
@@ -408,7 +408,7 @@ func TestPRMPathSuffixMissing(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL+"/mcp", true, "best-effort")
 	if !hasFinding(report.Findings, "PRM_WELLKNOWN_PATH_SUFFIX_MISSING") {
-		t.Fatalf("expected PRM_WELLKNOWN_PATH_SUFFIX_MISSING finding")
+		t.Fatalf("expected PRM_WELLKNOWN_PATH_SUFFIX_MISSING Finding")
 	}
 }
 
@@ -432,7 +432,7 @@ func TestPRMJWKSURINotHTTPS(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL, true, "best-effort")
 	if !hasFinding(report.Findings, "PRM_JWKS_URI_NOT_HTTPS") {
-		t.Fatalf("expected PRM_JWKS_URI_NOT_HTTPS finding")
+		t.Fatalf("expected PRM_JWKS_URI_NOT_HTTPS Finding")
 	}
 }
 
@@ -456,15 +456,15 @@ func TestAuthServerIssuerPrivateBlocked(t *testing.T) {
 
 	report := runScanWithConfig(t, baseURL, false, "off")
 	if !hasFinding(report.Findings, "AUTH_SERVER_ISSUER_PRIVATE_BLOCKED") {
-		t.Fatalf("expected AUTH_SERVER_ISSUER_PRIVATE_BLOCKED finding")
+		t.Fatalf("expected AUTH_SERVER_ISSUER_PRIVATE_BLOCKED Finding")
 	}
 }
 
-func runScanWithConfig(t *testing.T, target string, allowPrivate bool, rfcMode string) scanReport {
+func runScanWithConfig(t *testing.T, target string, allowPrivate bool, rfcMode string) ScanReport {
 	t.Helper()
 	var stdout bytes.Buffer
 	var verbose bytes.Buffer
-	report, _, err := runScanFunnel(scanConfig{
+	report, _, err := RunScanFunnel(ScanConfig{
 		Target:              target,
 		Timeout:             5 * time.Second,
 		MCPMode:             "best-effort",
@@ -472,16 +472,16 @@ func runScanWithConfig(t *testing.T, target string, allowPrivate bool, rfcMode s
 		AllowPrivateIssuers: allowPrivate,
 	}, &stdout, &verbose)
 	if err != nil {
-		t.Fatalf("runScanFunnel error: %v", err)
+		t.Fatalf("RunScanFunnel error: %v", err)
 	}
 	return report
 }
 
-func runScanWithConfigInsecure(t *testing.T, target string, allowPrivate bool, rfcMode string) scanReport {
+func runScanWithConfigInsecure(t *testing.T, target string, allowPrivate bool, rfcMode string) ScanReport {
 	t.Helper()
 	var stdout bytes.Buffer
 	var verbose bytes.Buffer
-	report, _, err := runScanFunnel(scanConfig{
+	report, _, err := RunScanFunnel(ScanConfig{
 		Target:              target,
 		Timeout:             5 * time.Second,
 		MCPMode:             "best-effort",
@@ -490,7 +490,7 @@ func runScanWithConfigInsecure(t *testing.T, target string, allowPrivate bool, r
 		Insecure:            true,
 	}, &stdout, &verbose)
 	if err != nil {
-		t.Fatalf("runScanFunnel error: %v", err)
+		t.Fatalf("RunScanFunnel error: %v", err)
 	}
 	return report
 }
