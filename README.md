@@ -53,7 +53,7 @@ git clone https://github.com/authprobe/authprobe.git && \
 ### Check version
 ```bash
 authprobe --version
-authprobe dev (commit none, built unknown)
+authprobe 0.4.0 (commit 92d5fada10399cd96da6521536ed746464592c93, built 2026-02-09T05:48:13Z)
 ```
 
 ### Isolating Failure using `authprobe`
