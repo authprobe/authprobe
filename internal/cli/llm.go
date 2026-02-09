@@ -7,10 +7,12 @@ package cli
 // │ Function                            │ Purpose                                                    │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ buildLLMExplanation                 │ Dispatch explanation generation to configured provider     │
+// │ buildLLMPrompt                      │ Construct the prompt for LLM responses                     │
 // └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 
 import (
 	"fmt"
+	"strings"
 )
 
 const llmSystemPrompt = "You are a compliance analyst for MCP OAuth servers. " +
@@ -42,4 +44,92 @@ func buildLLMExplanation(config scanConfig, report scanReport) (string, error) {
 		return buildAnthropicExplanation(config, report)
 	}
 	return "", fmt.Errorf("missing LLM API key (provide --openai-api-key or --anthropic-api-key)")
+}
+
+// buildLLMPrompt constructs the prompt sent to the LLM for scan explanation.
+//
+// The prompt is structured to give the LLM full context about the scan:
+//
+//  1. Instructions: Asks the LLM to analyze results and explain failures with
+//     spec references (MCP 2025-11-25, RFC 9728, RFC 8414, JSON-RPC 2.0).
+//
+//  2. Scan context: Includes target URL, MCP mode, and RFC mode from the report
+//     so the LLM understands what strictness level was applied.
+//
+//  3. All steps: Lists every scan step with ID, name, status (PASS/FAIL/SKIP),
+//     and detail. This shows the full funnel progression.
+//
+//  4. Failed steps (if any): Repeats only the failed steps for emphasis,
+//     making it easy for the LLM to focus on what went wrong.
+//
+//  5. All findings: Lists each finding with its code, severity, confidence,
+//     and all evidence lines. This provides the diagnostic details.
+//
+//  6. Primary finding: Highlights the highest-priority finding separately.
+//     When multiple findings exist, the LLM is instructed to focus on this one.
+//
+// Inputs:
+//   - _: Scan configuration (unused, reserved for future context)
+//   - report: The scan report containing target, steps, findings, and primary finding
+//
+// Outputs:
+//   - string: Formatted prompt text ready to send to the LLM
+func buildLLMPrompt(_ scanConfig, report scanReport) string {
+	var out strings.Builder
+	fmt.Fprintln(&out, "Analyze the AuthProbe scan results and explain why the failure is valid and justified, or if not, what should be changed.")
+	fmt.Fprintln(&out, "Include spec references (MCP 2025-11-25, RFC 9728, RFC 8414, JSON-RPC 2.0) and describe correct server behavior.")
+	if len(report.Findings) > 1 && report.PrimaryFinding.Code != "" {
+		fmt.Fprintf(&out, "There are %d findings; only explain the highest priority failure (the primary finding below).\n", len(report.Findings))
+	}
+	fmt.Fprintln(&out, "")
+	fmt.Fprintf(&out, "Target: %s\n", report.Target)
+	fmt.Fprintf(&out, "MCP mode: %s\n", report.MCPMode)
+	fmt.Fprintf(&out, "RFC mode: %s\n", report.RFCMode)
+	fmt.Fprintln(&out, "")
+	fmt.Fprintln(&out, "Steps:")
+	for _, step := range report.Steps {
+		line := fmt.Sprintf("- [%d] %s: %s", step.ID, step.Name, step.Status)
+		if strings.TrimSpace(step.Detail) != "" {
+			line = fmt.Sprintf("%s (%s)", line, strings.TrimSpace(step.Detail))
+		}
+		fmt.Fprintln(&out, line)
+	}
+	failedCount := 0
+	for _, step := range report.Steps {
+		if step.Status == "FAIL" {
+			failedCount++
+		}
+	}
+	if failedCount > 0 {
+		fmt.Fprintln(&out, "")
+		fmt.Fprintln(&out, "Failed steps:")
+		for _, step := range report.Steps {
+			if step.Status != "FAIL" {
+				continue
+			}
+			line := fmt.Sprintf("- [%d] %s", step.ID, step.Name)
+			if strings.TrimSpace(step.Detail) != "" {
+				line = fmt.Sprintf("%s: %s", line, strings.TrimSpace(step.Detail))
+			}
+			fmt.Fprintln(&out, line)
+		}
+	}
+	if len(report.Findings) > 0 {
+		fmt.Fprintln(&out, "")
+		fmt.Fprintln(&out, "Findings:")
+		for _, finding := range report.Findings {
+			fmt.Fprintf(&out, "- %s (%s, confidence %.2f)\n", finding.Code, finding.Severity, finding.Confidence)
+			for _, evidence := range finding.Evidence {
+				fmt.Fprintf(&out, "  - Evidence: %s\n", evidence)
+			}
+		}
+	}
+	if report.PrimaryFinding.Code != "" {
+		fmt.Fprintln(&out, "")
+		fmt.Fprintf(&out, "Primary finding: %s (%s, confidence %.2f)\n", report.PrimaryFinding.Code, report.PrimaryFinding.Severity, report.PrimaryFinding.Confidence)
+		for _, evidence := range report.PrimaryFinding.Evidence {
+			fmt.Fprintf(&out, "- Evidence: %s\n", evidence)
+		}
+	}
+	return strings.TrimSpace(out.String())
 }

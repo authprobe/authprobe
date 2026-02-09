@@ -7,7 +7,6 @@ package cli
 // │ Function                            │ Purpose                                                    │
 // ├─────────────────────────────────────┼────────────────────────────────────────────────────────────┤
 // │ buildOpenAIExplanation              │ Generate a detailed, spec-focused explanation via OpenAI   │
-// │ buildLLMPrompt                      │ Construct the prompt for LLM responses                     │
 // │ extractOpenAIOutputText             │ Extract text from OpenAI responses payload                 │
 // └─────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 
@@ -117,66 +116,6 @@ func buildOpenAIExplanation(config scanConfig, report scanReport) (string, error
 		return "", errors.New("openai response missing text output")
 	}
 	return explanation, nil
-}
-
-func buildLLMPrompt(config scanConfig, report scanReport) string {
-	var out strings.Builder
-	fmt.Fprintln(&out, "Analyze the AuthProbe scan results and explain why the failure is valid and justified, or if not, what should be changed.")
-	fmt.Fprintln(&out, "Include spec references (MCP 2025-11-25, RFC 9728, RFC 8414, JSON-RPC 2.0) and describe correct server behavior.")
-	if len(report.Findings) > 1 && report.PrimaryFinding.Code != "" {
-		fmt.Fprintf(&out, "There are %d findings; only explain the highest priority failure (the primary finding below).\n", len(report.Findings))
-	}
-	fmt.Fprintln(&out, "")
-	fmt.Fprintf(&out, "Target: %s\n", report.Target)
-	fmt.Fprintf(&out, "MCP mode: %s\n", report.MCPMode)
-	fmt.Fprintf(&out, "RFC mode: %s\n", report.RFCMode)
-	fmt.Fprintln(&out, "")
-	fmt.Fprintln(&out, "Steps:")
-	for _, step := range report.Steps {
-		line := fmt.Sprintf("- [%d] %s: %s", step.ID, step.Name, step.Status)
-		if strings.TrimSpace(step.Detail) != "" {
-			line = fmt.Sprintf("%s (%s)", line, strings.TrimSpace(step.Detail))
-		}
-		fmt.Fprintln(&out, line)
-	}
-	failedCount := 0
-	for _, step := range report.Steps {
-		if step.Status == "FAIL" {
-			failedCount++
-		}
-	}
-	if failedCount > 0 {
-		fmt.Fprintln(&out, "")
-		fmt.Fprintln(&out, "Failed steps:")
-		for _, step := range report.Steps {
-			if step.Status != "FAIL" {
-				continue
-			}
-			line := fmt.Sprintf("- [%d] %s", step.ID, step.Name)
-			if strings.TrimSpace(step.Detail) != "" {
-				line = fmt.Sprintf("%s: %s", line, strings.TrimSpace(step.Detail))
-			}
-			fmt.Fprintln(&out, line)
-		}
-	}
-	if len(report.Findings) > 0 {
-		fmt.Fprintln(&out, "")
-		fmt.Fprintln(&out, "Findings:")
-		for _, finding := range report.Findings {
-			fmt.Fprintf(&out, "- %s (%s, confidence %.2f)\n", finding.Code, finding.Severity, finding.Confidence)
-			for _, evidence := range finding.Evidence {
-				fmt.Fprintf(&out, "  - Evidence: %s\n", evidence)
-			}
-		}
-	}
-	if report.PrimaryFinding.Code != "" {
-		fmt.Fprintln(&out, "")
-		fmt.Fprintf(&out, "Primary finding: %s (%s, confidence %.2f)\n", report.PrimaryFinding.Code, report.PrimaryFinding.Severity, report.PrimaryFinding.Confidence)
-		for _, evidence := range report.PrimaryFinding.Evidence {
-			fmt.Fprintf(&out, "- Evidence: %s\n", evidence)
-		}
-	}
-	return strings.TrimSpace(out.String())
 }
 
 func extractOpenAIOutputText(resp openAIResponse) string {
