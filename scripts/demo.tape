@@ -12,7 +12,7 @@ Sleep 1s
 
 Type "authprobe scan https://compute.googleapis.com/mcp --explain --trace-failure"
 Enter
-Sleep 3s
+Sleep 10s
 
 Type "echo 'See README for full quickstart and troubleshooting'"
 Enter

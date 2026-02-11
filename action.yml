@@ -3,7 +3,7 @@ description: Run AuthProbe scans in CI and upload reports.
 author: AuthProbe
 inputs:
   version:
-    description: Release version to use (e.g., v0.1.0 or 0.1.0). Use "latest" for newest.
+    description: Release version to use (e.g., v0.5.0 or 0.5.0). Use "latest" for newest.
     default: latest
   command:
     description: AuthProbe command to run (currently "scan").

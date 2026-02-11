@@ -610,7 +610,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: authprobe/authprobe@v0.1.0
+      - uses: authprobe/authprobe@v0.5.0
         with:
           mcp_url: https://mcp.example.com/mcp
           args: --fail-on medium --rfc strict
@@ -618,16 +618,16 @@ jobs:
 
 Action inputs (all optional except `mcp_url`):
 
-| Input              | Default                    | Description                                       |
-|--------------------|----------------------------|---------------------------------------------------|
-| `version`          | `latest`                   | Release version (e.g., `v0.1.0` or `latest`)      |
+| Input              | Default                    | Description                                        |
+|--------------------|----------------------------|----------------------------------------------------|
+| `version`          | `latest`                   | Release version (e.g., `v0.5.0` or `latest`)       |
 | `command`          | `scan`                     | AuthProbe command to run                           |
 | `mcp_url`          | —                          | MCP endpoint URL (required when `command=scan`)    |
 | `args`             | `""`                       | Additional CLI flags passed to AuthProbe           |
 | `report_md`        | `authprobe-report.md`      | Markdown report output path (empty to skip)        |
 | `report_json`      | `authprobe-report.json`    | JSON report output path (empty to skip)            |
 | `bundle`           | `authprobe-evidence.zip`   | Evidence bundle output path (empty to skip)        |
-| `upload_artifacts` | `true`                     | Upload reports as workflow artifacts                |
+| `upload_artifacts` | `true`                     | Upload reports as workflow artifacts               |
 
 ---
 
