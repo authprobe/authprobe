@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT INT HUP TERM
 
 log() {
-  printf '[authprobe/install] %s\n' "$*"
+  printf '[authprobe/install] %s\n' "$*" >&2
 }
 
 warn() {
@@ -111,11 +111,12 @@ select_asset() {
   release_json="$1"
   os="$2"
   arch="$3"
+  tab_char="$(printf '\t')"
 
   assets_tsv="${TMP_DIR}/assets.tsv"
   printf '%s' "${release_json}" | list_assets > "${assets_tsv}"
 
-  while IFS='\t' read -r name url; do
+  while IFS="${tab_char}" read -r name url; do
     if asset_name_matches_target "${name}" "${os}" "${arch}"; then
       printf '%s\t%s\n' "${name}" "${url}"
       return 0
@@ -178,6 +179,10 @@ verify_checksum_if_available() {
 }
 
 install_binary() {
+  if [ ! -t 1 ]; then
+    warn "stdout is redirected; run this script directly (do not pipe ./scripts/install.sh into sh)"
+  fi
+
   need_cmd curl
   need_cmd uname
   need_cmd mktemp
@@ -223,12 +228,14 @@ install_binary() {
   install -m 0755 "${downloaded}" "${INSTALL_DIR}/${BINARY_NAME}"
 
   log "installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
-  echo
-  echo "Next steps:"
-  echo "  1) Ensure ${INSTALL_DIR} is on your PATH"
-  echo "     export PATH=\"${INSTALL_DIR}:\$PATH\""
-  echo "  2) Verify installation"
-  echo "     authprobe --version"
+  cat >&2 <<EOF
+
+Next steps:
+  1) Ensure ${INSTALL_DIR} is on your PATH
+     export PATH="${INSTALL_DIR}:\$PATH"
+  2) Verify installation
+     authprobe --version
+EOF
 }
 
 install_binary
