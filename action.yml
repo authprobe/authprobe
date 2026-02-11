@@ -48,20 +48,20 @@ runs:
       if: inputs.upload_artifacts == 'true' && inputs.report_md != ''
       uses: actions/upload-artifact@v4
       with:
-        name: authprobe-report-md
+        name: authprobe-report-md-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ inputs.report_md }}
         if-no-files-found: warn
     - name: Upload JSON report
       if: inputs.upload_artifacts == 'true' && inputs.report_json != ''
       uses: actions/upload-artifact@v4
       with:
-        name: authprobe-report-json
+        name: authprobe-report-json-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ inputs.report_json }}
         if-no-files-found: warn
     - name: Upload evidence bundle
       if: inputs.upload_artifacts == 'true' && inputs.bundle != ''
       uses: actions/upload-artifact@v4
       with:
-        name: authprobe-evidence
+        name: authprobe-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ inputs.bundle }}
         if-no-files-found: warn

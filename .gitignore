@@ -1,3 +1,5 @@
 # Shell scripts
 *.sh
 !scripts/action.sh
+!scripts/install.sh
+!scripts/record_demo.sh

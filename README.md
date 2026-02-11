@@ -29,10 +29,47 @@ Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728]
 
 ---
 
+## Who this is for
+
+- MCP server authors validating OAuth discovery and protected-resource metadata behavior.
+- MCP client implementers debugging where auth flows diverge from RFC 9728 / RFC 8414.
+- Platform, security, and infra teams triaging auth regressions in CI before rollout.
+- API teams that need reproducible evidence bundles for handoff across org boundaries.
+
 ## Quickstart
 
-### Install (binary)
-Download the latest release binary from GitHub Releases and put it on your PATH.
+### 2-minute demo
+
+```bash
+# Fast install (no sudo, installs into ~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/authprobe/authprobe/main/scripts/install.sh | sh
+
+# Run a real scan
+~/.local/bin/authprobe scan https://mcp.example.com/mcp --json -
+```
+
+Expected output (trimmed):
+
+```text
+Funnel
+  [1] MCP probe (401 + WWW-Authenticate)      [✓] PASS
+  [2] MCP initialize + tools/list             [X] FAIL
+  [3] PRM fetch matrix                        [✓] PASS
+```
+
+Demo GIF: ![AuthProbe 2-minute demo](docs/assets/demo.gif)
+
+_Maintainer note: generate or refresh this GIF with `scripts/record_demo.sh` before a release. The repo keeps the pipeline, not a large binary by default._
+
+### Install (fast paths)
+
+```bash
+# Option A: Go toolchain
+go install github.com/authprobe/authprobe/cmd/authprobe@latest
+
+# Option B: Install script (latest GitHub release asset)
+curl -fsSL https://raw.githubusercontent.com/authprobe/authprobe/main/scripts/install.sh | sh
+```
 
 ### Install (Docker)
 ```bash
@@ -40,8 +77,10 @@ docker pull ghcr.io/authprobe/authprobe:latest
 docker run --rm ghcr.io/authprobe/authprobe:latest scan https://mcp.example.com/mcp
 docker run --rm ghcr.io/authprobe/authprobe:latest scan \
 	https://compute.googleapis.com/mcp --openai-api-key=<key>
-
 ```
+
+### Install (release binary fallback)
+Download the latest release binary from GitHub Releases and put it on your PATH.
 
 ### Install (Clone Repository)
 ```bash
