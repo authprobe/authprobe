@@ -60,21 +60,36 @@ asset_name_matches_target() {
   name="$1"
   os="$2"
   arch="$3"
+  lname="$(printf '%s' "${name}" | tr '[:upper:]' '[:lower:]')"
 
-  case "${name}" in
+  os_aliases="${os}"
+  case "${os}" in
+    darwin) os_aliases="${os_aliases} macos osx" ;;
+  esac
+
+  arch_aliases="${arch}"
+  case "${arch}" in
+    amd64) arch_aliases="${arch_aliases} x86_64 x64" ;;
+    arm64) arch_aliases="${arch_aliases} aarch64" ;;
+  esac
+
+  case "${lname}" in
     *checksums*|*sha256*|*sbom*|*.sig|*.pem|*.minisig)
       return 1
       ;;
   esac
 
-  case "${name}" in
-    *"${os}"*"${arch}"*|*"${arch}"*"${os}"*)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  for os_token in ${os_aliases}; do
+    for arch_token in ${arch_aliases}; do
+      case "${lname}" in
+        *"${os_token}"*"${arch_token}"*|*"${arch_token}"*"${os_token}"*)
+          return 0
+          ;;
+      esac
+    done
+  done
+
+  return 1
 }
 
 list_assets() {
