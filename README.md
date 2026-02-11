@@ -61,6 +61,12 @@ Demo GIF: ![AuthProbe 2-minute demo](docs/assets/demo.gif)
 
 _Maintainer note: generate or refresh this GIF with `scripts/record_demo.sh` before a release. The repo keeps the pipeline, not a large binary by default._
 
+## Used in the wild
+
+- Sentry MCP (`getsentry/sentry-mcp`) used AuthProbe to identify and fix RFC 9728 Protected Resource Metadata compliance gaps for `mcp.sentry.dev` ([PR #799](https://github.com/getsentry/sentry-mcp/pull/799), merged Feb 10, 2026; [details](docs/case-studies/sentry-mcp.md)).
+
+_Mentions are factual references, not endorsements._
+
 ### Install (fast paths)
 
 ```bash
