@@ -15,18 +15,18 @@ Enter
 Sleep 12s
 
 # Scroll down slowly (tune count + delay)
-PageDown
+PageUp
 Sleep 700ms
-PageDown
+PageUp
 Sleep 700ms
-PageDown
+PageUp
 Sleep 700ms
-PageDown
+PageUp
 Sleep 700ms
 
 # Micro-scroll for fine positioning
-Down 6
+Up 6
 Sleep 500ms
-Down 6
+Up 6
 
 Sleep 2s

@@ -59,7 +59,6 @@ Funnel
 
 Demo GIF: ![AuthProbe 2-minute demo](docs/assets/demo.gif)
 
-_Maintainer note: generate or refresh this GIF with `scripts/record_demo.sh` before a release. The repo keeps the pipeline, not a large binary by default._
 
 ## Used in the wild
 
