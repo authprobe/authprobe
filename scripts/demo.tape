@@ -1,4 +1,3 @@
-
 Output docs/assets/demo.gif
 
 Set Width 1200
@@ -7,25 +6,24 @@ Set FontSize 32
 Set TypingSpeed 60ms
 Set WaitTimeout 3m
 
-# Make prompt deterministic
-Type "export PS1='DEMO>'"
-Enter
-Sleep 200ms
-
-Type "cd /mnt/vol2/authprobe"
+Type "authprobe scan https://aws-mcp.us-east-1.api.aws/mcp"
 Enter
 
-Type "rm -f /tmp/authprobe-report.md"
-Enter
+# Give it 10 seconds to produce output
+Sleep 10s
 
-Type "authprobe scan https://aws-mcp.us-east-1.api.aws/mcp --timeout 4 --md /tmp/authprobe-report.md"
-Enter
+# Scroll down slowly (tune count/sleep for your output length)
+PageDown
+Sleep 700ms
+PageDown
+Sleep 700ms
+PageDown
+Sleep 700ms
+PageDown
+Sleep 700ms
+PageDown
+Sleep 700ms
+PageDown
 
-# Wait for scan to fully complete (prompt returns)
-Wait+Line /DEMO>$/
-
-Type "sed -n '/^Primary Finding/,/^$/p' /tmp/authprobe-report.md"
-Enter
-
+# Let the viewer read the “money shot”
 Sleep 2s
-
