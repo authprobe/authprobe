@@ -10,7 +10,7 @@ Type "authprobe --version"
 Enter
 Sleep 1s
 
-Type "authprobe scan https://compute.googleapis.com/mcp --explain --trace-failure"
+Type "authprobe scan https://aws-mcp.us-east-1.api.aws/mcp"
 Enter
 Sleep 12s
 
