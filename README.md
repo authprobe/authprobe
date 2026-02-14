@@ -27,6 +27,7 @@ See [docs/funnel.md](docs/funnel.md) for the full breakdown of what gets checked
 
 Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636), [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591), [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), [RFC 9110](https://datatracker.ietf.org/doc/html/rfc9110).
 
+
 ---
 
 ## Who this is for
@@ -63,10 +64,9 @@ Demo GIF: ![AuthProbe 2-minute demo](docs/assets/demo.gif)
 ## Used in the wild
 
 - Sentry MCP (`getsentry/sentry-mcp`) used AuthProbe to identify and fix RFC 9728 Protected Resource Metadata compliance gaps for `mcp.sentry.dev` ([PR #799](https://github.com/getsentry/sentry-mcp/pull/799), merged Feb 10, 2026; [details](docs/case-studies/sentry-mcp.md)).
-- Kiro (kirodotdev/Kiro) used AuthProbe to help pinpoint an MCP server metadata/authorization detection issue after a CLI update; [details](https://github.com/kirodotdev/Kiro/issues/5452#issuecomment-3899076021)
+- Kiro (`kirodotdev/Kiro`) used AuthProbe to help pinpoint an MCP server metadata/authorization detection issue after a CLI update; [details](https://github.com/kirodotdev/Kiro/issues/5452#issuecomment-3899076021)
 
-
-_Mentions are factual references, not endorsements._
+_Mentions are factual references, not endorsements. If you are using `authprobe`, drop us a note. Like `authprobe`? toss a ⭐ - it's our caffine shot._
 
 ### Install (fast paths)
 
