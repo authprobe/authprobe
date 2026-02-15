@@ -65,6 +65,7 @@ Demo GIF: ![AuthProbe 2-minute demo](docs/assets/demo.gif)
 
 - Sentry MCP (`getsentry/sentry-mcp`) used AuthProbe to identify and fix RFC 9728 Protected Resource Metadata compliance gaps for `mcp.sentry.dev` ([PR #799](https://github.com/getsentry/sentry-mcp/pull/799), merged Feb 10, 2026; [details](docs/case-studies/sentry-mcp.md)).
 - Kiro (`kirodotdev/Kiro`) used AuthProbe to help pinpoint an MCP server metadata/authorization detection issue after a CLI update; [details](https://github.com/kirodotdev/Kiro/issues/5452#issuecomment-3899076021)
+- Yargı MCP (`saidsurucu/yargi-mcp`) used AuthProbe to surface a protocol-compliance bug where JSON-RPC request IDs with `null` were accepted (Issue #18, opened Feb 12, 2026); [details](https://github.com/saidsurucu/yargi-mcp/issues/18)
 
 _Mentions are factual references, not endorsements. If you are using `authprobe`, drop us a note. Like `authprobe`? toss a ⭐ - it's our caffine shot._
 
