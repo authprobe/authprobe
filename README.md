@@ -369,7 +369,7 @@ Call Trace Using: https://github.com/authprobe/authprobe
 <
 < {"jsonrpc":"2.0","id":"","result":null,"error":{"code":-32600,"message":"HTTP method not supported."}}
 
-┌────────────────────┤ LLM EXPLANATION ├─────────────────────┐
+┌───────────────────┤ ROOT-CAUSE ANALYSIS ├───────────────────┐
 ### Summary of the Primary Finding: AUTH_REQUIRED_BUT_NOT_ADVERTISED (High Severity)
 
 The scan indicates that the AWS MCP server at

@@ -502,12 +502,12 @@ func (f *funnel) buildScanSummary(report ScanReport) ScanSummary {
 	if f.config.LLMExplain {
 		explanation, err := buildLLMExplanation(f.config, report)
 		if err != nil {
-			message := fmt.Sprintf("LLM explanation unavailable: %v", err)
-			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("LLM Explanation") + "\n" + message + "\n"
-			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## LLM explanation\n\n" + message + "\n"
+			message := fmt.Sprintf("Root-cause analysis unavailable: %v", err)
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("Root-Cause Analysis") + "\n" + message + "\n"
+			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## Root-Cause Analysis\n\n" + message + "\n"
 		} else if explanation != "" {
-			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("LLM Explanation") + "\n" + explanation + "\n"
-			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## LLM explanation\n\n" + explanation + "\n"
+			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("Root-Cause Analysis") + "\n" + explanation + "\n"
+			summary.MD = strings.TrimSpace(summary.MD) + "\n\n## Root-Cause Analysis\n\n" + explanation + "\n"
 		}
 	}
 	summary.Trace = f.trace
