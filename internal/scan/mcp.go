@@ -52,6 +52,13 @@ import (
 // mcpProtocolVersion is the MCP protocol version supported by authprobe.
 const mcpProtocolVersion = "2025-11-25"
 
+func effectiveMCPProtocolVersion(config ScanConfig) string {
+	if strings.TrimSpace(config.MCPProtocolVersion) != "" {
+		return strings.TrimSpace(config.MCPProtocolVersion)
+	}
+	return mcpProtocolVersion
+}
+
 type mcpProtocolVersions struct {
 	ClientRequestedVersion  string
 	ServerNegotiatedVersion string
@@ -143,7 +150,19 @@ func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]
 
 	if versions != nil {
 		versions.ClientRequestedVersion = mcpProtocolVersion
-		versions.ClientEffectiveVersion = mcpProtocolVersion
+		versions.ClientEffectiveVersion = effectiveMCPProtocolVersion(config)
+	}
+
+	if mcpModeEnabled(config.MCPMode) && strings.TrimSpace(config.MCPProtocolVersion) == "" {
+		agreedVersion, negotiateErr := NegotiateMCPVersion(&Client{HTTPClient: client}, config.Target)
+		if negotiateErr == nil {
+			config.MCPProtocolVersion = agreedVersion
+			if versions != nil {
+				versions.ClientEffectiveVersion = agreedVersion
+			}
+		} else if versions != nil {
+			findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_NEGOTIATION_FAILED", negotiateErr.Error()))
+		}
 	}
 
 	if !authRequired {
@@ -151,7 +170,7 @@ func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]
 	}
 
 	initParams := map[string]any{
-		"protocolVersion": mcpProtocolVersion,
+		"protocolVersion": effectiveMCPProtocolVersion(config),
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "authprobe",
@@ -306,8 +325,8 @@ func parseInitializeResult(config ScanConfig, payload *jsonRPCResponse, resp *ht
 	protocolVersion, ok := result["protocolVersion"].(string)
 	if !ok || strings.TrimSpace(protocolVersion) == "" {
 		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISSING", "initialize result missing protocolVersion"))
-	} else if protocolVersion != mcpProtocolVersion {
-		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISMATCH", fmt.Sprintf("protocolVersion %q != %q", protocolVersion, mcpProtocolVersion)))
+	} else if protocolVersion != effectiveMCPProtocolVersion(config) {
+		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISMATCH", fmt.Sprintf("protocolVersion %q != %q", protocolVersion, effectiveMCPProtocolVersion(config))))
 	}
 
 	// MCP 2025-11-25: "capabilities" MUST be an object if present
@@ -694,8 +713,15 @@ func checkTasksSupport(client *http.Client, config ScanConfig, sessionID string,
 // FetchMCPTools performs MCP initialize + tools/list to retrieve the list of tools.
 // This is used by cli.go to fetch tool details for the --mcp-tool flag.
 func FetchMCPTools(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdout io.Writer) ([]MCPToolDetail, error) {
+	if mcpModeEnabled(config.MCPMode) && strings.TrimSpace(config.MCPProtocolVersion) == "" {
+		agreedVersion, err := NegotiateMCPVersion(&Client{HTTPClient: client}, config.Target)
+		if err == nil {
+			config.MCPProtocolVersion = agreedVersion
+		}
+	}
+
 	initParams := map[string]any{
-		"protocolVersion": mcpProtocolVersion,
+		"protocolVersion": effectiveMCPProtocolVersion(config),
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "authprobe",
@@ -789,7 +815,7 @@ func postJSONRPCBytes(client *http.Client, config ScanConfig, target string, bod
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if mcpModeEnabled(config.MCPMode) {
-		req.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
+		req.Header.Set("MCP-Protocol-Version", effectiveMCPProtocolVersion(config))
 		if sessionID != "" {
 			req.Header.Set("MCP-Session-Id", sessionID)
 		}

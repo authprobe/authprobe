@@ -171,8 +171,9 @@ func TestFetchMCPTools_Success(t *testing.T) {
 	// Create HTTP client and config
 	client := &http.Client{}
 	config := ScanConfig{
-		Target:  server.URL,
-		MCPMode: "best-effort",
+		Target:             server.URL,
+		MCPMode:            "best-effort",
+		MCPProtocolVersion: mcpProtocolVersion,
 	}
 
 	// Call FetchMCPTools with a trace slice (required by addTrace)
@@ -444,17 +445,68 @@ func TestFetchMCPTools_ToolWithComplexSchema(t *testing.T) {
 	}
 }
 
-func TestMCPProtocolNegotiationNotAppliedPrimaryFinding(t *testing.T) {
-	mockServer := &mockMCPServer{
-		InitializeProtocolVersion: "2025-06-18",
-		ToolsListError: &jsonRPCError{
-			Code:    -32600,
-			Message: "Bad Request: Unsupported protocol version (supported versions: 2025-06-18, 2025-03-26, 2024-11-05, 2024-10-07)",
-		},
-		ToolsListStatusCode: http.StatusBadRequest,
-	}
+func TestMCPProtocolNegotiationAppliedInFunnel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jsonRPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 
-	server := httptest.NewServer(mockServer)
+		switch req.Method {
+		case "initialize":
+			if r.Header.Get("MCP-Protocol-Version") == mcpProtocolVersion {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"error": map[string]any{
+						"code":    -32600,
+						"message": "Unsupported protocol version (supported versions: 2025-06-18)",
+						"data": map[string]any{
+							"supportedVersions": []string{"2025-06-18"},
+						},
+					},
+				})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result": map[string]any{
+					"protocolVersion": "2025-06-18",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+				},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			if got := r.Header.Get("MCP-Protocol-Version"); got != "2025-06-18" {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"error": map[string]any{
+						"code":    -32600,
+						"message": "Bad Request: Unsupported protocol version (supported versions: 2025-06-18)",
+					},
+				})
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  map[string]any{"tools": []any{}},
+			})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"error":   map[string]any{"code": -32601, "message": "Method not found"},
+			})
+		}
+	}))
 	defer server.Close()
 
 	report, _, err := RunScanFunnel(ScanConfig{
@@ -466,27 +518,14 @@ func TestMCPProtocolNegotiationNotAppliedPrimaryFinding(t *testing.T) {
 		t.Fatalf("RunScanFunnel failed: %v", err)
 	}
 
-	if report.PrimaryFinding.Code != "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED" {
-		t.Fatalf("expected primary finding MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED, got %q", report.PrimaryFinding.Code)
+	if report.PrimaryFinding.Code == "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED" {
+		t.Fatalf("expected negotiation to be applied, got primary finding %q", report.PrimaryFinding.Code)
 	}
 
 	for _, finding := range report.Findings {
-		if finding.Code == "MCP_TOOLS_LIST_FAILED" && finding.Severity == "high" {
-			t.Fatalf("expected tools/list failure to be demoted, got severity %q", finding.Severity)
+		if finding.Code == "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED" {
+			t.Fatalf("unexpected finding: %q", finding.Code)
 		}
-	}
-
-	header := ""
-	for i, req := range mockServer.ReceivedRequests {
-		if req.Method == "tools/list" {
-			if id, ok := req.ID.(float64); ok && id == 2 {
-				header = mockServer.ReceivedProtocolVersions[i]
-				break
-			}
-		}
-	}
-	if header != mcpProtocolVersion {
-		t.Fatalf("expected tools/list to use protocol version %q, got %q", mcpProtocolVersion, header)
 	}
 }
 

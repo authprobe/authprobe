@@ -42,12 +42,13 @@ type ScanConfig struct {
 	LLMMaxTokens        int    // Max output tokens for LLM explanation (default: 700)
 	FailOn              string // Severity threshold for exit code 2: none, low, medium, high
 	MCPMode             string
+	MCPProtocolVersion  string // Effective MCP protocol version to send on requests (defaults to mcpProtocolVersion)
 	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
 	AllowPrivateIssuers bool
 	Insecure            bool // Skip TLS certificate verification (dev only)
 	NoFollowRedirects   bool // Stop at first response, don't follow HTTP redirects
 	Redact              bool
-	TraceFailure        bool   // Include verbose output of failed steps in report
+	TraceFailure        bool // Include verbose output of failed steps in report
 	JSONPath            string
 	MDPath              string
 	TraceASCIIPath      string
@@ -138,8 +139,8 @@ type prmResult struct {
 // Response handling:
 //   - 401 Unauthorized: Auth required. Extract resource_metadata from WWW-Authenticate header.
 //   - 405 Method Not Allowed: Server doesn't support GET/SSE. Auth status unknown; check PRM.
-//     	Step 2 will send POST requests (initialize, tools/list) per MCP spec, which may
-//     	reveal auth requirements (401/403) that GET couldn't detect.
+//     Step 2 will send POST requests (initialize, tools/list) per MCP spec, which may
+//     reveal auth requirements (401/403) that GET couldn't detect.
 //   - 200 OK: Auth not required (public endpoint). Validates SSE content-type per MCP spec.
 //   - Timeout: Returns MCP_PROBE_TIMEOUT Finding (servers must respond promptly per MCP spec).
 func probeMCP(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdout io.Writer) (string, string, []Finding, string, bool, error) {
@@ -585,7 +586,7 @@ func fetchAuthServerMetadata(client *http.Client, config ScanConfig, prm prmResu
 		hadServerError := false
 		hadInvalid := false
 
-		// Walk metadata discovery URLs built by buildIssuerDiscoveryCandidates: 
+		// Walk metadata discovery URLs built by buildIssuerDiscoveryCandidates:
 		// RFC 8414 (/.well-known/oauth-authorization-server) then OIDC (/.well-known/openid-configuration).
 		for idx, metadataURL := range candidates {
 			resp, payload, err := fetchJSON(client, config, metadataURL, trace, stdout, "Step 4: Auth server metadata")
