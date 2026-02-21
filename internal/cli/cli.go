@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -129,6 +130,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	openAIAPIKey := fs.String("openai-api-key", "", "")
 	anthropicAPIKey := fs.String("anthropic-api-key", "", "")
 	llmMaxTokens := fs.Int("llm-max-tokens", 700, "")
+	stdioCommand := fs.String("stdio-command", "", "")
 
 	args = normalizeScanArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -136,13 +138,21 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 
-	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, "error: <mcp_url> is required")
+	if *stdioCommand == "" && fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "error: <mcp_url> is required unless --stdio-command is provided")
 		return 3
+	}
+	if *stdioCommand != "" && fs.NArg() > 1 {
+		fmt.Fprintln(stderr, "error: provide at most one <mcp_url> when using --stdio-command")
+		return 3
+	}
+	target := ""
+	if fs.NArg() == 1 {
+		target = fs.Arg(0)
 	}
 
 	config := scan.ScanConfig{
-		Target:              fs.Arg(0),
+		Target:              target,
 		Command:             "authprobe scan " + strings.Join(args, " "),
 		Headers:             headers,
 		Timeout:             time.Duration(*timeout) * time.Second,
@@ -172,6 +182,24 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		config.AnthropicAPIKey = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
 	}
 	config.LLMExplain = config.OpenAIAPIKey != "" || config.AnthropicAPIKey != ""
+
+	if strings.TrimSpace(*stdioCommand) != "" {
+		gatewayPath, err := gatewayPathFromTarget(target)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 3
+		}
+		gatewayTarget, cleanup, err := scan.StartStdioGateway(*stdioCommand, gatewayPath, config.Timeout)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 3
+		}
+		defer cleanup()
+		config.Target = gatewayTarget
+		if target == "" {
+			config.Command = "authprobe scan --stdio-command " + *stdioCommand
+		}
+	}
 
 	if *toolList && *toolDetail != "" {
 		fmt.Fprintln(stderr, "error: --tool-list and --tool-detail cannot be used together")
@@ -290,4 +318,22 @@ func toolTitle(tool scan.MCPToolDetail) string {
 		return titleStr
 	}
 	return ""
+}
+
+func gatewayPathFromTarget(target string) (string, error) {
+	trimmed := strings.TrimSpace(target)
+	if trimmed == "" {
+		return "/", nil
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return trimmed, nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("invalid stdio target URL: %w", err)
+	}
+	if parsed.Path == "" {
+		return "/", nil
+	}
+	return parsed.Path, nil
 }

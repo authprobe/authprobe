@@ -379,3 +379,27 @@ func TestScanInvalidFlag(t *testing.T) {
 		t.Errorf("expected exit code 3, got %d", code)
 	}
 }
+
+func TestGatewayPathFromTarget(t *testing.T) {
+	tests := []struct {
+		name   string
+		target string
+		want   string
+	}{
+		{name: "default", target: "", want: "/"},
+		{name: "path only", target: "/stdio", want: "/stdio"},
+		{name: "url path", target: "https://example.com/custom/path", want: "/custom/path"},
+		{name: "url no path", target: "https://example.com", want: "/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := gatewayPathFromTarget(tt.target)
+			if err != nil {
+				t.Fatalf("gatewayPathFromTarget() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("gatewayPathFromTarget() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

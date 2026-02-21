@@ -13,22 +13,23 @@ import "strings"
 
 func normalizeScanArgs(args []string) []string {
 	valueFlags := map[string]struct{}{
-		"-H":                 {},
-		"--header":           {},
-		"--timeout":          {},
-		"--mcp":              {},
-		"--rfc":              {},
-		"--fail-on":          {},
-		"--json":             {},
-		"--md":               {},
-		"--trace-ascii":      {},
-		"--bundle":           {},
-		"--output-dir":       {},
-		"-d":                 {},
-		"--tool-detail":      {},
-		"--openai-api-key":   {},
+		"-H":                  {},
+		"--header":            {},
+		"--timeout":           {},
+		"--mcp":               {},
+		"--rfc":               {},
+		"--fail-on":           {},
+		"--json":              {},
+		"--md":                {},
+		"--trace-ascii":       {},
+		"--bundle":            {},
+		"--output-dir":        {},
+		"-d":                  {},
+		"--tool-detail":       {},
+		"--openai-api-key":    {},
 		"--anthropic-api-key": {},
-		"--llm-max-tokens":   {},
+		"--llm-max-tokens":    {},
+		"--stdio-command":     {},
 	}
 
 	flags := make([]string, 0, len(args))

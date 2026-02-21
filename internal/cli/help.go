@@ -15,6 +15,7 @@ Note: For path-based resources, resource-specific PRM (path-suffix) or resource_
 
 USAGE:
   authprobe scan <mcp_url> [flags]
+  authprobe scan --stdio-command '<command>' [flags]
 
 ARGUMENTS:
   <mcp_url>                MCP endpoint URL (example: https://example.com/mcp)
@@ -24,6 +25,8 @@ FLAGS:
                            Example: -H "Host: internal.example.com"
 
       --timeout <sec>      Overall scan timeout in seconds. Default: 8
+      --stdio-command      Shell command for launching an MCP stdio server via a local HTTP bridge.
+                           Example: --stdio-command 'npx -y @modelcontextprotocol/server-everything'
 
       --mcp <mode>         MCP 2025-11-25 conformance checks (Streamable HTTP + JSON-RPC).
                            Options: off, best-effort, strict
@@ -81,6 +84,9 @@ EXAMPLES:
 
   # List available MCP tools on the server
   authprobe scan https://mcp.example.com/mcp --tool-list
+
+  # Scan a stdio MCP server command via local bridge
+  authprobe scan --stdio-command 'npx -y @modelcontextprotocol/server-everything' --tool-list
 
 For the latest version, full documentation, and all options visit:
   https://github.com/authprobe/authprobe

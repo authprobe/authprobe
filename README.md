@@ -116,6 +116,16 @@ AuthProbe helps you isolate failures by capturing network traces for failed prob
 authprobe scan https://mcp.example.com/mcp
 ```
 
+#### Scan stdio MCP servers via local bridge
+
+AuthProbe can launch a stdio MCP command and bridge it to a local HTTP endpoint automatically:
+
+```bash
+authprobe scan --stdio-command 'npx -y @modelcontextprotocol/server-everything' --tool-list
+```
+
+This bridge lets existing HTTP scan checks run against stdio servers.
+
 #### Get an RFC-based explanation of the failure
 
 ```bash
