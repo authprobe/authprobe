@@ -1007,6 +1007,8 @@ func findingRFCExplanation(code string) string {
 		return "MCP servers must require initialize before other requests such as tools/list."
 	case "MCP_PROTOCOL_VERSION_MISMATCH":
 		return "MCP version negotiation should be explicit and consistent with the requested protocolVersion."
+	case "VERSION_MISMATCH":
+		return "AuthProbe always scans with MCP protocol version 2025-11-25; mismatches mean the server likely does not support that version fully."
 	case "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED":
 		return "MCP clients must honor the negotiated protocolVersion returned by initialize; failures indicate version negotiation was not applied."
 	case "MCP_NOTIFICATION_STATUS_INVALID":
@@ -1125,6 +1127,7 @@ func findingSeverity(code string) string {
 		"AUTH_SERVER_PKCE_S256_MISSING",
 		"AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH",
 		"AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED",
+		"VERSION_MISMATCH",
 		"PRM_RESOURCE_TRAILING_SLASH",
 		"MCP_NOTIFICATION_BODY_PRESENT",
 		"MCP_NOTIFICATION_FAILED",

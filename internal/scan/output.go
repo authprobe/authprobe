@@ -203,9 +203,16 @@ func statusIndicator(status string) string {
 }
 
 // buildScanExplanation generates a human-readable explanation of the scan process.
-func buildScanExplanation(config ScanConfig, resourceMetadata string, prmResult prmResult, authRequired bool) string {
+func buildScanExplanation(config ScanConfig, resourceMetadata string, prmResult prmResult, authRequired bool, findings []Finding) string {
 	var out strings.Builder
 	fmt.Fprintln(&out, "Explain (RFC 9728 rationale)")
+	for _, finding := range findings {
+		if finding.Code != "VERSION_MISMATCH" || len(finding.Evidence) == 0 {
+			continue
+		}
+		fmt.Fprintln(&out, strings.TrimSpace(finding.Evidence[0]))
+		break
+	}
 	if !authRequired {
 		fmt.Fprintln(&out, "1) MCP probe")
 		fmt.Fprintln(&out, "- AuthProbe did not receive a 401 response that indicates authentication is required, so RFC 9728 PRM discovery is skipped.")

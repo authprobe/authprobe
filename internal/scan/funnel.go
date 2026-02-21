@@ -485,7 +485,7 @@ func sectionHeading(title string) string {
 func (f *funnel) buildScanSummary(report ScanReport) ScanSummary {
 	summary := buildSummary(report)
 	if f.config.Explain {
-		explanation := buildScanExplanation(f.config, f.resourceMetadata, f.prmResult, f.authRequired)
+		explanation := buildScanExplanation(f.config, f.resourceMetadata, f.prmResult, f.authRequired, report.Findings)
 		if explanation != "" {
 			summary.Stdout = strings.TrimSpace(summary.Stdout) + "\n\n" + sectionHeading("RFC Rationale") + "\n" + explanation + "\n"
 		}

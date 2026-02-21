@@ -29,7 +29,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 
 // NegotiateMCPVersion initializes an MCP connection and negotiates a compatible protocol version.
 func NegotiateMCPVersion(client *Client, endpoint string) (string, error) {
-	const requestedVersion = mcpProtocolVersion
+	const requestedVersion = SupportedMCPProtocolVersion
 
 	type rpcEnvelope struct {
 		JSONRPC string          `json:"jsonrpc"`

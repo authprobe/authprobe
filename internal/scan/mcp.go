@@ -49,20 +49,17 @@ import (
 	"strings"
 )
 
-// mcpProtocolVersion is the MCP protocol version supported by authprobe.
-const mcpProtocolVersion = "2025-11-25"
+// SupportedMCPProtocolVersion is the MCP protocol version used by authprobe scans.
+const SupportedMCPProtocolVersion = "2025-11-25"
 
 func effectiveMCPProtocolVersion(config ScanConfig) string {
-	if strings.TrimSpace(config.MCPProtocolVersion) != "" {
-		return strings.TrimSpace(config.MCPProtocolVersion)
-	}
-	return mcpProtocolVersion
+	return SupportedMCPProtocolVersion
 }
 
 type mcpProtocolVersions struct {
-	ClientRequestedVersion  string
-	ServerNegotiatedVersion string
-	ClientEffectiveVersion  string
+	ClientRequestedVersion string
+	ServerReportedVersion  string
+	ClientEffectiveVersion string
 }
 
 // JSON-RPC types for MCP communication.
@@ -149,20 +146,8 @@ func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]
 	var authObservation *mcpAuthObservation
 
 	if versions != nil {
-		versions.ClientRequestedVersion = mcpProtocolVersion
+		versions.ClientRequestedVersion = SupportedMCPProtocolVersion
 		versions.ClientEffectiveVersion = effectiveMCPProtocolVersion(config)
-	}
-
-	if mcpModeEnabled(config.MCPMode) && strings.TrimSpace(config.MCPProtocolVersion) == "" {
-		agreedVersion, negotiateErr := NegotiateMCPVersion(&Client{HTTPClient: client}, config.Target)
-		if negotiateErr == nil {
-			config.MCPProtocolVersion = agreedVersion
-			if versions != nil {
-				versions.ClientEffectiveVersion = agreedVersion
-			}
-		} else if versions != nil {
-			findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_NEGOTIATION_FAILED", negotiateErr.Error()))
-		}
 	}
 
 	if !authRequired {
@@ -220,8 +205,11 @@ func mcpInitializeAndListTools(client *http.Client, config ScanConfig, trace *[]
 	initResult, capabilities, sessionID, initResultFindings := parseInitializeResult(config, initPayload, initResp)
 	findings = append(findings, initResultFindings...)
 	if versions != nil && initResult != nil {
-		if negotiated, ok := initResult["protocolVersion"].(string); ok {
-			versions.ServerNegotiatedVersion = strings.TrimSpace(negotiated)
+		if reported, ok := initResult["protocolVersion"].(string); ok {
+			versions.ServerReportedVersion = strings.TrimSpace(reported)
+			if versions.ServerReportedVersion != "" && versions.ServerReportedVersion != versions.ClientEffectiveVersion {
+				fmt.Fprintf(&evidence, "\n%s", protocolVersionMismatchWarning(versions.ClientEffectiveVersion, versions.ServerReportedVersion))
+			}
 		}
 	}
 
@@ -326,7 +314,7 @@ func parseInitializeResult(config ScanConfig, payload *jsonRPCResponse, resp *ht
 	if !ok || strings.TrimSpace(protocolVersion) == "" {
 		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISSING", "initialize result missing protocolVersion"))
 	} else if protocolVersion != effectiveMCPProtocolVersion(config) {
-		findings = append(findings, newMCPFinding(config, "MCP_PROTOCOL_VERSION_MISMATCH", fmt.Sprintf("protocolVersion %q != %q", protocolVersion, effectiveMCPProtocolVersion(config))))
+		findings = append(findings, newFindingWithSeverity("VERSION_MISMATCH", protocolVersionMismatchWarning(effectiveMCPProtocolVersion(config), protocolVersion), "low"))
 	}
 
 	// MCP 2025-11-25: "capabilities" MUST be an object if present
@@ -374,26 +362,30 @@ func buildProtocolNegotiationFinding(config ScanConfig, versions *mcpProtocolVer
 	if !unsupported {
 		return nil
 	}
-	if strings.TrimSpace(versions.ServerNegotiatedVersion) == "" {
+	if strings.TrimSpace(versions.ServerReportedVersion) == "" {
 		return nil
 	}
 	if strings.TrimSpace(versions.ClientEffectiveVersion) == "" {
 		return nil
 	}
-	if versions.ServerNegotiatedVersion == versions.ClientEffectiveVersion {
+	if versions.ServerReportedVersion == versions.ClientEffectiveVersion {
 		return nil
 	}
 	evidence := []string{
 		fmt.Sprintf("requested protocolVersion: %s", versions.ClientRequestedVersion),
-		fmt.Sprintf("server negotiated protocolVersion: %s", versions.ServerNegotiatedVersion),
+		fmt.Sprintf("server negotiated protocolVersion: %s", versions.ServerReportedVersion),
 		fmt.Sprintf("client effective protocolVersion: %s", versions.ClientEffectiveVersion),
 		fmt.Sprintf("%s error: %s", callName, strings.TrimSpace(errMsg)),
 	}
 	if len(supportedVersions) > 0 {
 		evidence = append(evidence, fmt.Sprintf("supported versions: %s", strings.Join(supportedVersions, ", ")))
 	}
-	evidence = append(evidence, fmt.Sprintf("Server negotiated protocolVersion=%s but client continued using %s; retry with negotiated version.", versions.ServerNegotiatedVersion, versions.ClientEffectiveVersion))
+	evidence = append(evidence, fmt.Sprintf("Server negotiated protocolVersion=%s but client continued using %s; retry with negotiated version.", versions.ServerReportedVersion, versions.ClientEffectiveVersion))
 	return []Finding{newFindingWithEvidence("MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED", evidence)}
+}
+
+func protocolVersionMismatchWarning(scanningVersion string, serverVersion string) string {
+	return fmt.Sprintf("WARN: MCP protocol version mismatch: scanning with %s, server reports %s; server likely doesn't support %s; results may be incomplete or unstable.", scanningVersion, serverVersion, scanningVersion)
 }
 
 func parseUnsupportedProtocolVersion(errMsg string) (bool, []string) {
@@ -713,13 +705,6 @@ func checkTasksSupport(client *http.Client, config ScanConfig, sessionID string,
 // FetchMCPTools performs MCP initialize + tools/list to retrieve the list of tools.
 // This is used by cli.go to fetch tool details for the --mcp-tool flag.
 func FetchMCPTools(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdout io.Writer) ([]MCPToolDetail, error) {
-	if mcpModeEnabled(config.MCPMode) && strings.TrimSpace(config.MCPProtocolVersion) == "" {
-		agreedVersion, err := NegotiateMCPVersion(&Client{HTTPClient: client}, config.Target)
-		if err == nil {
-			config.MCPProtocolVersion = agreedVersion
-		}
-	}
-
 	initParams := map[string]any{
 		"protocolVersion": effectiveMCPProtocolVersion(config),
 		"capabilities":    map[string]any{},

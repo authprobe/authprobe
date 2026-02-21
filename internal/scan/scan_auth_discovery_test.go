@@ -204,7 +204,7 @@ func newNoAuthServer(t *testing.T) *httptest.Server {
 				"jsonrpc": "2.0",
 				"id":      req.ID,
 				"result": map[string]any{
-					"protocolVersion": mcpProtocolVersion,
+					"protocolVersion": SupportedMCPProtocolVersion,
 					"capabilities":    map[string]any{},
 				},
 			})

@@ -42,7 +42,7 @@ type ScanConfig struct {
 	LLMMaxTokens        int    // Max output tokens for LLM explanation (default: 700)
 	FailOn              string // Severity threshold for exit code 2: none, low, medium, high
 	MCPMode             string
-	MCPProtocolVersion  string // Effective MCP protocol version to send on requests (defaults to mcpProtocolVersion)
+	MCPProtocolVersion  string // Effective MCP protocol version to send on requests (defaults to SupportedMCPProtocolVersion)
 	RFCMode             string // Applies to all RFC checks: off, best-effort, strict
 	AllowPrivateIssuers bool
 	Insecure            bool // Skip TLS certificate verification (dev only)

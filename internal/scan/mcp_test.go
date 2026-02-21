@@ -82,7 +82,7 @@ func (m *mockMCPServer) handleInitialize(w http.ResponseWriter, req jsonRPCReque
 		w.Header().Set("MCP-Session-Id", m.SessionID)
 	}
 
-	protocolVersion := mcpProtocolVersion
+	protocolVersion := SupportedMCPProtocolVersion
 	if strings.TrimSpace(m.InitializeProtocolVersion) != "" {
 		protocolVersion = m.InitializeProtocolVersion
 	}
@@ -173,7 +173,7 @@ func TestFetchMCPTools_Success(t *testing.T) {
 	config := ScanConfig{
 		Target:             server.URL,
 		MCPMode:            "best-effort",
-		MCPProtocolVersion: mcpProtocolVersion,
+		MCPProtocolVersion: SupportedMCPProtocolVersion,
 	}
 
 	// Call FetchMCPTools with a trace slice (required by addTrace)
@@ -204,6 +204,19 @@ func TestFetchMCPTools_Success(t *testing.T) {
 	}
 	if mockServer.ReceivedRequests[1].Method != "tools/list" {
 		t.Errorf("expected second request method 'tools/list', got %q", mockServer.ReceivedRequests[1].Method)
+	}
+	for i, got := range mockServer.ReceivedProtocolVersions {
+		if got != SupportedMCPProtocolVersion {
+			t.Fatalf("request %d MCP-Protocol-Version = %q, want %q", i, got, SupportedMCPProtocolVersion)
+		}
+	}
+
+	initParams, ok := mockServer.ReceivedRequests[0].Params.(map[string]any)
+	if !ok {
+		t.Fatalf("initialize params type = %T, want map[string]any", mockServer.ReceivedRequests[0].Params)
+	}
+	if got, _ := initParams["protocolVersion"].(string); got != SupportedMCPProtocolVersion {
+		t.Fatalf("initialize params.protocolVersion = %q, want %q", got, SupportedMCPProtocolVersion)
 	}
 }
 
@@ -445,7 +458,8 @@ func TestFetchMCPTools_ToolWithComplexSchema(t *testing.T) {
 	}
 }
 
-func TestMCPProtocolNegotiationAppliedInFunnel(t *testing.T) {
+func TestMCPVersionMismatchWarningAndContinueInFunnel(t *testing.T) {
+	toolsListCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req jsonRPCRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -456,20 +470,12 @@ func TestMCPProtocolNegotiationAppliedInFunnel(t *testing.T) {
 
 		switch req.Method {
 		case "initialize":
-			if r.Header.Get("MCP-Protocol-Version") == mcpProtocolVersion {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]any{
-					"jsonrpc": "2.0",
-					"id":      req.ID,
-					"error": map[string]any{
-						"code":    -32600,
-						"message": "Unsupported protocol version (supported versions: 2025-06-18)",
-						"data": map[string]any{
-							"supportedVersions": []string{"2025-06-18"},
-						},
-					},
-				})
-				return
+			if got := r.Header.Get("MCP-Protocol-Version"); got != SupportedMCPProtocolVersion {
+				t.Fatalf("initialize header MCP-Protocol-Version = %q, want %q", got, SupportedMCPProtocolVersion)
+			}
+			params, _ := req.Params.(map[string]any)
+			if got, _ := params["protocolVersion"].(string); got != SupportedMCPProtocolVersion {
+				t.Fatalf("initialize params.protocolVersion = %q, want %q", got, SupportedMCPProtocolVersion)
 			}
 			json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0",
@@ -482,17 +488,11 @@ func TestMCPProtocolNegotiationAppliedInFunnel(t *testing.T) {
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
-			if got := r.Header.Get("MCP-Protocol-Version"); got != "2025-06-18" {
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]any{
-					"jsonrpc": "2.0",
-					"id":      req.ID,
-					"error": map[string]any{
-						"code":    -32600,
-						"message": "Bad Request: Unsupported protocol version (supported versions: 2025-06-18)",
-					},
-				})
-				return
+			if req.ID == float64(2) {
+				toolsListCalls++
+				if got := r.Header.Get("MCP-Protocol-Version"); got != SupportedMCPProtocolVersion {
+					t.Fatalf("tools/list header MCP-Protocol-Version = %q, want %q", got, SupportedMCPProtocolVersion)
+				}
 			}
 			json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0",
@@ -517,15 +517,26 @@ func TestMCPProtocolNegotiationAppliedInFunnel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunScanFunnel failed: %v", err)
 	}
-
-	if report.PrimaryFinding.Code == "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED" {
-		t.Fatalf("expected negotiation to be applied, got primary finding %q", report.PrimaryFinding.Code)
+	if toolsListCalls == 0 {
+		t.Fatalf("expected tools/list to be attempted after initialize")
 	}
 
+	if !hasFinding(report.Findings, "VERSION_MISMATCH") {
+		t.Fatalf("expected VERSION_MISMATCH finding")
+	}
+
+	foundWarningText := false
 	for _, finding := range report.Findings {
-		if finding.Code == "MCP_PROTOCOL_VERSION_NEGOTIATION_NOT_APPLIED" {
-			t.Fatalf("unexpected finding: %q", finding.Code)
+		if finding.Code != "VERSION_MISMATCH" {
+			continue
 		}
+		joined := strings.Join(finding.Evidence, "\n")
+		if strings.Contains(joined, SupportedMCPProtocolVersion) && strings.Contains(joined, "2025-06-18") && strings.Contains(joined, "likely doesn't support") {
+			foundWarningText = true
+		}
+	}
+	if !foundWarningText {
+		t.Fatalf("expected VERSION_MISMATCH evidence to include both versions and guidance")
 	}
 }
 
