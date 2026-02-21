@@ -107,3 +107,49 @@ done
 		t.Fatalf("target mismatch: %q", target)
 	}
 }
+
+func TestStartStdioGateway_StreamableHTTPMethods(t *testing.T) {
+	tmpDir := t.TempDir()
+	serverPath := filepath.Join(tmpDir, "mock_stdio_server.sh")
+	serverScript := `#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"ok":true}}'
+done
+`
+	if err := os.WriteFile(serverPath, []byte(serverScript), 0o700); err != nil {
+		t.Fatalf("write mock stdio server: %v", err)
+	}
+
+	target, cleanup, err := StartStdioGateway(serverPath, "/", 2*time.Second)
+	if err != nil {
+		t.Fatalf("StartStdioGateway: %v", err)
+	}
+	defer cleanup()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	getResp, err := client.Get(target)
+	if err != nil {
+		t.Fatalf("GET gateway root: %v", err)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET status: got %d want %d", getResp.StatusCode, http.StatusOK)
+	}
+	if got := getResp.Header.Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("GET content-type: got %q want includes %q", got, "text/event-stream")
+	}
+
+	optionsReq, err := http.NewRequest(http.MethodOptions, target, nil)
+	if err != nil {
+		t.Fatalf("OPTIONS request: %v", err)
+	}
+	optionsResp, err := client.Do(optionsReq)
+	if err != nil {
+		t.Fatalf("OPTIONS gateway root: %v", err)
+	}
+	defer optionsResp.Body.Close()
+	if optionsResp.StatusCode == http.StatusMethodNotAllowed {
+		t.Fatalf("OPTIONS status must not be 405")
+	}
+}

@@ -116,7 +116,22 @@ type gatewayDebugSnapshot struct {
 func (g *stdioGateway) handle(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		// Streamable HTTP expects MCP endpoints to accept GET (SSE) as well as
+		// POST. In stdio mode we only bridge request/response JSON-RPC over POST,
+		// but responding to GET keeps probe behavior compatible.
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, ": ok\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		return
+	case http.MethodOptions:
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	case http.MethodPost:
 	default:
