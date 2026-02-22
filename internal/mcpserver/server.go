@@ -260,11 +260,11 @@ func (s *Server) write(resp rpcResponse) {
 func (s *Server) callTool(name string, args map[string]any) (map[string]any, error) {
 	s.evictExpiredSessions()
 	switch name {
-	case "authprobe.scan_http":
+	case "authprobe.scan_http", "authprobe_scan_http":
 		return s.scanHTTP(args, "")
-	case "authprobe.scan_resume":
+	case "authprobe.scan_resume", "authprobe_scan_resume":
 		return s.scanResume(args)
-	case "authprobe.scan_http_with_credentials":
+	case "authprobe.scan_http_with_credentials", "authprobe_scan_http_with_credentials":
 		credentialRef, _ := args["credential_ref"].(string)
 		authorizationHeader, _ := args["authorization_header"].(string)
 		if strings.TrimSpace(credentialRef) != "" {
@@ -631,7 +631,7 @@ func (s *Server) startAuthAssist(
 		"user_code":        sess.UserCode,
 		"next_action": map[string]any{
 			"type":      "call_tool",
-			"tool_name": "authprobe.scan_resume",
+			"tool_name": "authprobe_scan_resume",
 			"args":      map[string]any{"scan_id": scanID},
 		},
 	}, nil
@@ -1068,7 +1068,7 @@ func toolDefinitions() []map[string]any {
 		"auth_assist=off to disable."
 	return []map[string]any{
 		{
-			"name":        "authprobe.scan_http",
+			"name":        "authprobe_scan_http",
 			"description": scanDesc,
 			"inputSchema": map[string]any{
 				"type":       "object",
@@ -1077,7 +1077,7 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
-			"name": "authprobe.scan_resume",
+			"name": "authprobe_scan_resume",
 			"description": "Resume an auth_assist scan. Returns awaiting_user_auth " +
 				"until authorization succeeds, then finishes scan.",
 			"inputSchema": map[string]any{
@@ -1089,7 +1089,7 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
-			"name": "authprobe.scan_http_with_credentials",
+			"name": "authprobe_scan_http_with_credentials",
 			"description": "Run authenticated scan using credential_ref (preferred) " +
 				"or authorization_header fallback. Never ask the user to paste " +
 				"tokens.",
