@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -184,6 +185,58 @@ func newOAuthFixture(t *testing.T) *oauthFixture {
 	})
 	fx.server = httptest.NewServer(mux)
 	return fx
+}
+
+func TestToolsListNamesAreSchemaCompliant(t *testing.T) {
+	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
+	resp := s.handle(rpcRequest{
+		JSONRPC: "2.0",
+		ID:      json.RawMessage("1"),
+		Method:  "tools/list",
+	})
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	result, ok := resp.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected result type: %T", resp.Result)
+	}
+	toolsAny, ok := result["tools"].([]map[string]any)
+	if !ok {
+		// Marshal/unmarshal to handle interface-typed map conversion.
+		b, _ := json.Marshal(result["tools"])
+		var converted []map[string]any
+		if err := json.Unmarshal(b, &converted); err != nil {
+			t.Fatalf("unable to decode tools payload: %v", err)
+		}
+		toolsAny = converted
+	}
+
+	namePattern := regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+	got := map[string]bool{}
+	for _, tool := range toolsAny {
+		name, _ := tool["name"].(string)
+		if name == "" {
+			t.Fatalf("tool missing name: %+v", tool)
+		}
+		if !namePattern.MatchString(name) {
+			t.Fatalf("tool name %q does not match schema pattern", name)
+		}
+		got[name] = true
+	}
+
+	want := []string{
+		"authprobe_scan_http",
+		"authprobe_scan_resume",
+		"authprobe_scan_http_with_credentials",
+		"authprobe_render_markdown",
+		"authprobe_bundle_evidence",
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Fatalf("expected tool %q in tools/list, got=%v", name, got)
+		}
+	}
 }
 
 func TestScanHTTPAuthRequired(t *testing.T) {

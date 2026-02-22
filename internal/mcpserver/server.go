@@ -279,13 +279,13 @@ func (s *Server) callTool(name string, args map[string]any) (map[string]any, err
 			return nil, fmt.Errorf("credential_ref is required (preferred); authorization_header is optional fallback")
 		}
 		return s.scanHTTP(args, authorizationHeader)
-	case "authprobe.render_markdown":
+	case "authprobe.render_markdown", "authprobe_render_markdown":
 		report, err := s.reportFromInput(args)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"markdown": scan.RenderMarkdown(report)}, nil
-	case "authprobe.bundle_evidence":
+	case "authprobe.bundle_evidence", "authprobe_bundle_evidence":
 		report, err := s.reportFromInput(args)
 		if err != nil {
 			return nil, err
@@ -1100,7 +1100,7 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
-			"name":        "authprobe.render_markdown",
+			"name":        "authprobe_render_markdown",
 			"description": "Render markdown report from report_json or scan_id.",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -1111,7 +1111,7 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
-			"name":        "authprobe.bundle_evidence",
+			"name":        "authprobe_bundle_evidence",
 			"description": "Create redacted evidence bundle from report_json or scan_id.",
 			"inputSchema": map[string]any{
 				"type": "object",
