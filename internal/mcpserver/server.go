@@ -186,21 +186,21 @@ func (s *Server) write(resp rpcResponse) {
 // Outputs: structured tool result map and optional error.
 func (s *Server) callTool(name string, args map[string]any) (map[string]any, error) {
 	switch name {
-	case "authprobe.scan_http":
+	case "authprobe_scan_http":
 		return s.scanHTTP(args, "")
-	case "authprobe.scan_http_authenticated":
+	case "authprobe_scan_http_authenticated":
 		auth, _ := args["authorization"].(string)
 		if strings.TrimSpace(auth) == "" {
 			return nil, fmt.Errorf("authorization is required")
 		}
 		return s.scanHTTP(args, auth)
-	case "authprobe.render_markdown":
+	case "authprobe_render_markdown":
 		report, err := s.reportFromInput(args)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"markdown": scan.RenderMarkdown(report)}, nil
-	case "authprobe.bundle_evidence":
+	case "authprobe_bundle_evidence":
 		report, err := s.reportFromInput(args)
 		if err != nil {
 			return nil, err
@@ -273,7 +273,7 @@ func (s *Server) scanHTTP(args map[string]any, authorization string) (map[string
 	res := map[string]any{"status": "ok", "scan_id": scanID, "summary": map[string]any{"target": report.Target, "auth_required": report.AuthRequired, "primary_finding": report.PrimaryFinding.Code}, "scan": reportObj}
 	if report.AuthRequired && authorization == "" {
 		res["status"] = "auth_required"
-		res["next_action"] = map[string]any{"type": "call_tool", "tool_name": "authprobe.scan_http_authenticated", "required_input": []string{"authorization"}, "hint": "Provide Authorization header value (e.g., 'Bearer <token>'). Tokens are redacted in output."}
+		res["next_action"] = map[string]any{"type": "call_tool", "tool_name": "authprobe_scan_http_authenticated", "required_input": []string{"authorization"}, "hint": "Provide Authorization header value (e.g., 'Bearer <token>'). Tokens are redacted in output."}
 	}
 	return res, nil
 }
@@ -349,12 +349,12 @@ func toStringSlice(v any) []string {
 // Inputs: none.
 // Outputs: array of tool definition objects.
 func toolDefinitions() []map[string]any {
-	scanDesc := "Run unauthenticated scan first. If result.status is auth_required, show the message, ask user to authenticate in client, then call authprobe.scan_http_authenticated with Authorization header."
+	scanDesc := "Run unauthenticated scan first. If result.status is auth_required, show the message, ask user to authenticate in client, then call authprobe_scan_http_authenticated with Authorization header."
 	return []map[string]any{
-		{"name": "authprobe.scan_http", "description": scanDesc, "inputSchema": map[string]any{"type": "object", "required": []string{"target_url"}, "properties": commonProps(false)}},
-		{"name": "authprobe.scan_http_authenticated", "description": "Run authenticated scan using provided Authorization header. Tokens are redacted in output.", "inputSchema": map[string]any{"type": "object", "required": []string{"target_url", "authorization"}, "properties": commonProps(true)}},
-		{"name": "authprobe.render_markdown", "description": "Render markdown report from report_json or scan_id.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"scan_id": map[string]any{"type": "string"}, "report_json": map[string]any{"type": "object"}}}},
-		{"name": "authprobe.bundle_evidence", "description": "Create redacted evidence bundle from report_json or scan_id.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"scan_id": map[string]any{"type": "string"}, "report_json": map[string]any{"type": "object"}}}},
+		{"name": "authprobe_scan_http", "description": scanDesc, "inputSchema": map[string]any{"type": "object", "required": []string{"target_url"}, "properties": commonProps(false)}},
+		{"name": "authprobe_scan_http_authenticated", "description": "Run authenticated scan using provided Authorization header. Tokens are redacted in output.", "inputSchema": map[string]any{"type": "object", "required": []string{"target_url", "authorization"}, "properties": commonProps(true)}},
+		{"name": "authprobe_render_markdown", "description": "Render markdown report from report_json or scan_id.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"scan_id": map[string]any{"type": "string"}, "report_json": map[string]any{"type": "object"}}}},
+		{"name": "authprobe_bundle_evidence", "description": "Create redacted evidence bundle from report_json or scan_id.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"scan_id": map[string]any{"type": "string"}, "report_json": map[string]any{"type": "object"}}}},
 	}
 }
 

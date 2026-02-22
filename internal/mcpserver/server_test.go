@@ -39,7 +39,7 @@ func TestScanHTTPAuthRequired(t *testing.T) {
 	ts := authMCPServer(t)
 	defer ts.Close()
 	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	result, err := s.callTool("authprobe.scan_http", map[string]any{"target_url": ts.URL + "/mcp", "mcp_mode": "off"})
+	result, err := s.callTool("authprobe_scan_http", map[string]any{"target_url": ts.URL + "/mcp", "mcp_mode": "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestScanHTTPAuthenticated(t *testing.T) {
 	ts := authMCPServer(t)
 	defer ts.Close()
 	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	result, err := s.callTool("authprobe.scan_http_authenticated", map[string]any{"target_url": ts.URL + "/mcp", "authorization": "Bearer test-token", "mcp_mode": "off"})
+	result, err := s.callTool("authprobe_scan_http_authenticated", map[string]any{"target_url": ts.URL + "/mcp", "authorization": "Bearer test-token", "mcp_mode": "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestRedactionNoTokenLeak(t *testing.T) {
 	ts := authMCPServer(t)
 	defer ts.Close()
 	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	result, err := s.callTool("authprobe.scan_http_authenticated", map[string]any{"target_url": ts.URL + "/mcp", "authorization": "Bearer super-secret-token", "mcp_mode": "off"})
+	result, err := s.callTool("authprobe_scan_http_authenticated", map[string]any{"target_url": ts.URL + "/mcp", "authorization": "Bearer super-secret-token", "mcp_mode": "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestRedactionNoTokenLeak(t *testing.T) {
 func TestToolDescriptionsContainAuthFlowInstruction(t *testing.T) {
 	tools := toolDefinitions()
 	for _, tool := range tools {
-		if tool["name"] == "authprobe.scan_http" {
+		if tool["name"] == "authprobe_scan_http" {
 			desc := tool["description"].(string)
 			if !strings.Contains(desc, "auth_required") || !strings.Contains(desc, "scan_http_authenticated") {
 				t.Fatalf("scan_http description missing orchestration guidance: %s", desc)
