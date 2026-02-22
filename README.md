@@ -668,6 +668,11 @@ issue with the scan output (`--json -` or `--bundle`).
 
 ---
 
+## Additional Docs
+- MCP client-managed OAuth: `docs/mcp-client-managed-oauth.md`
+
+---
+
 ## Contributing
 Contributions that help the ecosystem most:
 - Bug reports with scan output (`--json -` or `--bundle`)

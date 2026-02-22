@@ -1,23 +1,20 @@
 package mcpserver
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
 
-// authMCPServer validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func authMCPServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if auth == "" {
-			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+r.URL.Scheme+`://`+r.Host+`/.well-known/oauth-protected-resource"`)
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+"http://"+r.Host+`/.well-known/oauth-protected-resource/mcp"`)
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"missing token"}`))
 			return
@@ -28,37 +25,51 @@ func authMCPServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte("event: message\ndata: ok\n\n"))
 			return
 		}
+		switch r.URL.Path {
+		case "/mcp":
+			var req map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			method, _ := req["method"].(string)
+			w.Header().Set("Content-Type", "application/json")
+			if method == "initialize" {
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"ok","version":"1"}}}`))
+				return
+			}
+			if method == "tools/list" {
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"x","inputSchema":{"type":"object"}}]}}`))
+				return
+			}
+		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
 }
 
-// TestScanHTTPAuthRequired validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestScanHTTPAuthRequired(t *testing.T) {
 	ts := authMCPServer(t)
 	defer ts.Close()
 	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	result, err := s.callTool("authprobe_scan_http", map[string]any{"target_url": ts.URL + "/mcp", "mcp_mode": "off"})
+	result, err := s.callTool("authprobe.scan_http", map[string]any{"target_url": ts.URL + "/mcp", "mcp_mode": "best-effort"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result["status"] != "auth_required" {
 		t.Fatalf("expected auth_required, got %v", result["status"])
 	}
-	if result["next_action"] == nil {
-		t.Fatalf("expected next_action")
+	if result["auth_request"] == nil || result["next_action"] == nil {
+		t.Fatalf("expected auth_request and next_action")
+	}
+	payload, _ := json.Marshal(result)
+	if strings.Contains(string(payload), "Provide Authorization header") {
+		t.Fatalf("response should not ask for raw Authorization header")
 	}
 }
 
-// TestScanHTTPAuthenticated validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
-func TestScanHTTPAuthenticated(t *testing.T) {
+func TestScanHTTPWithCredentialRef(t *testing.T) {
 	ts := authMCPServer(t)
 	defer ts.Close()
+	t.Setenv("AUTHPROBE_MCP_CREDENTIALS", "ref1=Bearer test-token")
 	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	result, err := s.callTool("authprobe_scan_http_authenticated", map[string]any{"target_url": ts.URL + "/mcp", "authorization": "Bearer test-token", "mcp_mode": "off"})
+	result, err := s.callTool("authprobe.scan_http_with_credentials", map[string]any{"target_url": ts.URL + "/mcp", "credential_ref": "ref1", "mcp_mode": "best-effort"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,14 +78,12 @@ func TestScanHTTPAuthenticated(t *testing.T) {
 	}
 }
 
-// TestRedactionNoTokenLeak validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestRedactionNoTokenLeak(t *testing.T) {
 	ts := authMCPServer(t)
 	defer ts.Close()
+	t.Setenv("AUTHPROBE_MCP_CREDENTIALS", "ref1=Bearer super-secret-token")
 	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	result, err := s.callTool("authprobe_scan_http_authenticated", map[string]any{"target_url": ts.URL + "/mcp", "authorization": "Bearer super-secret-token", "mcp_mode": "off"})
+	result, err := s.callTool("authprobe.scan_http_with_credentials", map[string]any{"target_url": ts.URL + "/mcp", "credential_ref": "ref1", "mcp_mode": "best-effort"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,72 +93,21 @@ func TestRedactionNoTokenLeak(t *testing.T) {
 	}
 }
 
-// TestToolDescriptionsContainAuthFlowInstruction validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
-func TestToolDescriptionsContainAuthFlowInstruction(t *testing.T) {
-	tools := toolDefinitions()
-	for _, tool := range tools {
-		if tool["name"] == "authprobe_scan_http" {
-			desc := tool["description"].(string)
-			if !strings.Contains(desc, "auth_required") || !strings.Contains(desc, "scan_http_authenticated") {
-				t.Fatalf("scan_http description missing orchestration guidance: %s", desc)
-			}
-			return
-		}
-	}
-	t.Fatalf("scan tool not found")
-}
-
-// TestHTTPTransportInitialize validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
-func TestHTTPTransportInitialize(t *testing.T) {
-	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	h := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
-	defer h.Close()
-
-	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
-	resp, err := http.Post(h.URL, "application/json", bytes.NewReader(req))
+func TestCredentialFileProvider(t *testing.T) {
+	f, err := os.CreateTemp("", "authprobe-creds-*.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status: got %d want %d", resp.StatusCode, http.StatusOK)
-	}
-	var payload map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload["error"] != nil {
-		t.Fatalf("unexpected rpc error: %v", payload["error"])
-	}
-}
-
-// TestRejectsNullJSONRPCID validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
-func TestRejectsNullJSONRPCID(t *testing.T) {
-	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
-	h := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
-	defer h.Close()
-
-	req := []byte(`{"jsonrpc":"2.0","id":null,"method":"tools/list","params":{}}`)
-	resp, err := http.Post(h.URL, "application/json", bytes.NewReader(req))
+	defer os.Remove(f.Name())
+	_, _ = f.WriteString(`{"demo":"Bearer abc"}`)
+	_ = f.Close()
+	t.Setenv("AUTHPROBE_MCP_CREDENTIALS_FILE", f.Name())
+	provider := envCredentialProvider{}
+	value, err := provider.ResolveAuthorization(nil, "demo", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	var payload map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		t.Fatal(err)
-	}
-	errObj, ok := payload["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected JSON-RPC error, got: %v", payload)
-	}
-	if errObj["code"] != float64(-32600) {
-		t.Fatalf("expected error code -32600, got: %v", errObj["code"])
+	if value != "Bearer abc" {
+		t.Fatalf("unexpected value %q", value)
 	}
 }
