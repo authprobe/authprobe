@@ -625,3 +625,13 @@ func ensureParentDir(path string) error {
 	}
 	return os.MkdirAll(dir, 0o755)
 }
+
+// RenderMarkdown renders markdown for a scan report.
+func RenderMarkdown(report ScanReport) string {
+	return renderMarkdown(report)
+}
+
+// SummaryFromReport builds summary outputs for a report.
+func SummaryFromReport(report ScanReport) ScanSummary {
+	return buildSummary(report)
+}

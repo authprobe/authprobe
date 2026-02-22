@@ -345,12 +345,17 @@ func (f *funnel) runPRMFetch() (string, string, []Finding, error) {
 		return status, evidence, findings, nil
 	}
 
-	// No valid PRM found - if auth isn't required, note missing OAuth config but keep status FAIL for unusable PRM.
+	// No valid PRM found and auth isn't required: this is expected for public/no-auth servers.
 	if !f.authRequired {
 		if result.MetadataFound {
 			return "PASS", evidence, nil, nil
 		}
-		return "FAIL", evidence, nil, nil
+		if evidence != "" {
+			evidence = evidence + "\nPRM not required for public/no-auth MCP servers"
+		} else {
+			evidence = "PRM not required for public/no-auth MCP servers"
+		}
+		return "SKIP", evidence, nil, nil
 	}
 
 	// Auth was required (401) but no valid PRM - this is a real failure
@@ -458,6 +463,7 @@ func (f *funnel) buildReport() ScanReport {
 		Target:          f.config.Target,
 		MCPMode:         f.config.MCPMode,
 		RFCMode:         f.config.RFCMode,
+		AuthRequired:    f.authRequired,
 		Timestamp:       time.Now().UTC().Format(time.RFC3339),
 		Github:          githubURL,
 		PRMOK:           f.prmOK,

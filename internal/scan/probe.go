@@ -63,6 +63,7 @@ type ScanReport struct {
 	Target          string     `json:"target"`
 	MCPMode         string     `json:"mcp_mode"`
 	RFCMode         string     `json:"rfc_mode"`
+	AuthRequired    bool       `json:"auth_required"`
 	Timestamp       string     `json:"timestamp"`
 	Github          string     `json:"github"`
 	PRMOK           bool       `json:"prm_ok"`

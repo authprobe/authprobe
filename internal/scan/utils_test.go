@@ -351,3 +351,28 @@ func TestBuildIssuerDiscoveryCandidates(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateURLStringAllowsHTTPForPrivateWhenAllowPrivateIssuers(t *testing.T) {
+	cfg := ScanConfig{RFCMode: "best-effort", AllowPrivateIssuers: true}
+	findings := validateURLString("http://127.0.0.1:38080/mcp", "resource", cfg, false)
+	for _, finding := range findings {
+		if finding.Code == "RFC3986_ABSOLUTE_HTTPS_REQUIRED" {
+			t.Fatalf("unexpected HTTPS requirement finding for private URL with allow-private-issuers")
+		}
+	}
+}
+
+func TestValidateURLStringStillRequiresHTTPSWithoutAllowPrivateIssuers(t *testing.T) {
+	cfg := ScanConfig{RFCMode: "best-effort", AllowPrivateIssuers: false}
+	findings := validateURLString("http://127.0.0.1:38080/mcp", "resource", cfg, false)
+	found := false
+	for _, finding := range findings {
+		if finding.Code == "RFC3986_ABSOLUTE_HTTPS_REQUIRED" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected RFC3986_ABSOLUTE_HTTPS_REQUIRED finding")
+	}
+}

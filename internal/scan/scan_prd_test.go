@@ -494,3 +494,76 @@ func runScanWithConfigInsecure(t *testing.T, target string, allowPrivate bool, r
 	}
 	return report
 }
+
+func TestAllowPrivateIssuersSuppressesHTTPSEnforcementForLocalMCP(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	baseURL := server.URL
+	target := baseURL + "/mcp"
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, baseURL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocolVersion": "2025-11-25", "capabilities": map[string]any{}, "serverInfo": map[string]any{"name": "test", "version": "1"}}})
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"resource": target, "authorization_servers": []string{baseURL}})
+	})
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"resource": target, "authorization_servers": []string{baseURL}})
+	})
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": baseURL, "authorization_endpoint": baseURL + "/authorize", "token_endpoint": baseURL + "/token", "registration_endpoint": baseURL + "/register"})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_request"})
+	})
+	mux.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "unauthorized"})
+	})
+
+	var stdout bytes.Buffer
+	var verbose bytes.Buffer
+	report, _, err := RunScanFunnel(ScanConfig{Target: target, Timeout: 5 * time.Second, MCPMode: "off", RFCMode: "best-effort", AllowPrivateIssuers: true}, &stdout, &verbose)
+	if err != nil {
+		t.Fatalf("RunScanFunnel error: %v", err)
+	}
+	if hasFinding(report.Findings, "RFC3986_ABSOLUTE_HTTPS_REQUIRED") {
+		t.Fatalf("did not expect RFC3986_ABSOLUTE_HTTPS_REQUIRED when allow-private-issuers is true")
+	}
+}
+
+func TestPublicServerWithoutPRMSkipsPRMStep(t *testing.T) {
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocolVersion": "2025-11-25", "capabilities": map[string]any{}, "serverInfo": map[string]any{"name": "test", "version": "1"}}})
+	})
+
+	report := runScanWithConfig(t, server.URL+"/mcp", true, "best-effort")
+	if step := findStep(report.Steps, 3); step == nil || step.Status != "SKIP" {
+		t.Fatalf("expected step 3 to skip for public server without PRM, got %+v", step)
+	}
+	if hasFinding(report.Findings, "OAUTH_DISCOVERY_UNAVAILABLE") {
+		t.Fatalf("did not expect OAUTH_DISCOVERY_UNAVAILABLE finding for public server")
+	}
+}

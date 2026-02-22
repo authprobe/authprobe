@@ -786,9 +786,31 @@ func validateURLString(raw string, label string, config ScanConfig, allowRelativ
 		return findings
 	}
 	if parsed.IsAbs() && !isHTTPSURL(parsed) {
+		if config.AllowPrivateIssuers && isLocalOrPrivateURL(parsed) {
+			return findings
+		}
 		findings = append(findings, newFinding("RFC3986_ABSOLUTE_HTTPS_REQUIRED", fmt.Sprintf("%s not https: %q", label, raw)))
 	}
 	return findings
+}
+
+// isLocalOrPrivateURL reports whether URL host is localhost/.local or a private/loopback IP.
+func isLocalOrPrivateURL(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return isDisallowedIP(ip)
 }
 
 // checkEndpointHostMismatch checks if an endpoint host matches the issuer host.
