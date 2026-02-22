@@ -171,30 +171,32 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		target = fs.Arg(0)
 	}
 
-	config := scan.ScanConfig{
+	config := scan.NewBaseConfig(scan.BaseConfigInput{
 		Target:              target,
 		Command:             "authprobe scan " + strings.Join(args, " "),
 		Headers:             headers,
 		Timeout:             time.Duration(*timeout) * time.Second,
-		Verbose:             *verbose,
-		Explain:             *explain,
-		OpenAIAPIKey:        strings.TrimSpace(*openAIAPIKey),
-		AnthropicAPIKey:     strings.TrimSpace(*anthropicAPIKey),
-		LLMMaxTokens:        *llmMaxTokens,
-		FailOn:              fs.Lookup("fail-on").Value.String(),
+		MCPProbeTimeout:     2 * time.Second,
 		MCPMode:             fs.Lookup("mcp").Value.String(),
+		MCPProtocolVersion:  scan.SupportedMCPProtocolVersion,
 		RFCMode:             fs.Lookup("rfc").Value.String(),
 		AllowPrivateIssuers: fs.Lookup("allow-private-issuers").Value.String() == "true",
 		Insecure:            fs.Lookup("insecure").Value.String() == "true",
 		NoFollowRedirects:   fs.Lookup("no-follow-redirects").Value.String() == "true",
-		Redact:              !*noRedact,
 		TraceFailure:        *traceFailure,
-		JSONPath:            fs.Lookup("json").Value.String(),
-		MDPath:              fs.Lookup("md").Value.String(),
-		TraceASCIIPath:      fs.Lookup("trace-ascii").Value.String(),
-		BundlePath:          fs.Lookup("bundle").Value.String(),
-		OutputDir:           fs.Lookup("output-dir").Value.String(),
-	}
+		Redact:              !*noRedact,
+	})
+	config.Verbose = *verbose
+	config.Explain = *explain
+	config.OpenAIAPIKey = strings.TrimSpace(*openAIAPIKey)
+	config.AnthropicAPIKey = strings.TrimSpace(*anthropicAPIKey)
+	config.LLMMaxTokens = *llmMaxTokens
+	config.FailOn = fs.Lookup("fail-on").Value.String()
+	config.JSONPath = fs.Lookup("json").Value.String()
+	config.MDPath = fs.Lookup("md").Value.String()
+	config.TraceASCIIPath = fs.Lookup("trace-ascii").Value.String()
+	config.BundlePath = fs.Lookup("bundle").Value.String()
+	config.OutputDir = fs.Lookup("output-dir").Value.String()
 	if config.OpenAIAPIKey == "" {
 		config.OpenAIAPIKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	}

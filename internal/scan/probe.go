@@ -34,6 +34,7 @@ type ScanConfig struct {
 	Command             string // Original command for display
 	Headers             []string
 	Timeout             time.Duration
+	MCPProbeTimeout     time.Duration
 	Verbose             bool
 	Explain             bool
 	LLMExplain          bool
@@ -174,7 +175,11 @@ func probeMCP(client *http.Client, config ScanConfig, trace *[]TraceEntry, stdou
 		}
 	}
 	// Execute the HTTP request
-	resp, err := client.Do(req)
+	requestClient := client
+	if config.MCPProbeTimeout > 0 {
+		requestClient = &http.Client{Timeout: config.MCPProbeTimeout, Transport: client.Transport, CheckRedirect: client.CheckRedirect}
+	}
+	resp, err := requestClient.Do(req)
 	if err != nil {
 		if isTimeoutError(err) {
 			evidence := "probe timed out waiting for response headers; MCP spec requires SSE headers or a 405 for GET Accept: text/event-stream"

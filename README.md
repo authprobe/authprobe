@@ -60,6 +60,25 @@ Funnel
 
 Demo GIF: ![AuthProbe 2-minute demo](docs/assets/demo.gif)
 
+## AuthProbe MCP Server
+
+AuthProbe runs as an MCP server via `authprobe mcp --transport stdio`.
+
+### Configure
+
+```json
+{
+  "mcpServers": {
+    "authprobe": {
+      "command": "authprobe",
+      "args": ["mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+See `docs/mcp-server.md` for the full OAuth-assist flow and security notes.
+
 
 ## Used in the wild
 
