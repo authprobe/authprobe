@@ -59,19 +59,29 @@ type ScanConfig struct {
 const githubURL = "https://github.com/authprobe/authprobe"
 
 type ScanReport struct {
-	Command         string     `json:"command"`
-	Target          string     `json:"target"`
-	MCPMode         string     `json:"mcp_mode"`
-	RFCMode         string     `json:"rfc_mode"`
-	AuthRequired    bool       `json:"auth_required"`
-	Timestamp       string     `json:"timestamp"`
-	Github          string     `json:"github"`
-	PRMOK           bool       `json:"prm_ok"`
-	OAuthDiscovery  bool       `json:"oauth_discovery_viable"`
-	AuthzMetadataOK bool       `json:"authz_server_metadata_ok"`
-	Steps           []ScanStep `json:"steps"`
-	Findings        []Finding  `json:"findings"`
-	PrimaryFinding  Finding    `json:"primary_finding"`
+	Command         string               `json:"command"`
+	Target          string               `json:"target"`
+	MCPMode         string               `json:"mcp_mode"`
+	RFCMode         string               `json:"rfc_mode"`
+	AuthRequired    bool                 `json:"auth_required"`
+	Timestamp       string               `json:"timestamp"`
+	Github          string               `json:"github"`
+	PRMOK           bool                 `json:"prm_ok"`
+	OAuthDiscovery  bool                 `json:"oauth_discovery_viable"`
+	AuthzMetadataOK bool                 `json:"authz_server_metadata_ok"`
+	AuthDiscovery   AuthDiscoverySummary `json:"auth_discovery"`
+	Steps           []ScanStep           `json:"steps"`
+	Findings        []Finding            `json:"findings"`
+	PrimaryFinding  Finding              `json:"primary_finding"`
+}
+
+type AuthDiscoverySummary struct {
+	IssuerCandidates            []string `json:"issuer_candidates,omitempty"`
+	AuthorizationEndpoint       string   `json:"authorization_endpoint,omitempty"`
+	TokenEndpoint               string   `json:"token_endpoint,omitempty"`
+	DeviceAuthorizationEndpoint string   `json:"device_authorization_endpoint,omitempty"`
+	GrantTypesSupported         []string `json:"grant_types_supported,omitempty"`
+	ScopesSupported             []string `json:"scopes_supported,omitempty"`
 }
 
 type ScanStep struct {
@@ -506,8 +516,12 @@ type prmCandidate struct {
 }
 
 type authServerMetadataResult struct {
-	TokenEndpoints        []string
-	RegistrationEndpoints []string
+	TokenEndpoints              []string
+	RegistrationEndpoints       []string
+	AuthorizationEndpoints      []string
+	DeviceAuthorizationEndpoint string
+	GrantTypesSupported         []string
+	ScopesSupported             []string
 }
 
 // fetchAuthServerMetadata retrieves Authorization Server Metadata via RFC 8414 and OIDC discovery (Step 4).
@@ -718,8 +732,26 @@ func fetchAuthServerMetadata(client *http.Client, config ScanConfig, prm prmResu
 			}
 
 			result.TokenEndpoints = append(result.TokenEndpoints, tokenEndpoint)
+			result.AuthorizationEndpoints = append(result.AuthorizationEndpoints, authorizationEndpoint)
 			if registrationEndpoint != "" {
 				result.RegistrationEndpoints = append(result.RegistrationEndpoints, registrationEndpoint)
+			}
+			if deviceEndpoint, _ := obj["device_authorization_endpoint"].(string); deviceEndpoint != "" && result.DeviceAuthorizationEndpoint == "" {
+				result.DeviceAuthorizationEndpoint = deviceEndpoint
+			}
+			if grants, ok := obj["grant_types_supported"].([]any); ok {
+				for _, grant := range grants {
+					if grantStr, ok := grant.(string); ok && grantStr != "" {
+						result.GrantTypesSupported = append(result.GrantTypesSupported, grantStr)
+					}
+				}
+			}
+			if scopes, ok := obj["scopes_supported"].([]any); ok {
+				for _, scope := range scopes {
+					if scopeStr, ok := scope.(string); ok && scopeStr != "" {
+						result.ScopesSupported = append(result.ScopesSupported, scopeStr)
+					}
+				}
 			}
 			success = true
 			anySuccess = true

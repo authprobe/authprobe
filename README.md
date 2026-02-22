@@ -693,3 +693,53 @@ MCP server authentication, MCP conformance testing,
 SSRF protection, redaction, evidence bundle.
 
 ---
+
+## AuthProbe MCP (client-managed OAuth)
+
+AuthProbe MCP supports **client-managed OAuth (Option B)**. The MCP host/client (Claude Desktop, Cursor, etc.) owns OAuth UI and token storage; AuthProbe only discovers requirements and resumes scanning once credentials are available.
+
+Flow:
+1. Call `authprobe.scan_http` without credentials.
+2. If auth is needed, AuthProbe returns `status: "auth_required"` with an `auth_request` object and `next_action` pointing to `authprobe.scan_http_with_credentials`.
+3. Host completes OAuth and calls `authprobe.scan_http_with_credentials` with a `credential_ref` (preferred opaque handle).
+4. Optional fallback: `authorization_header` can be used only if host cannot provide credential handles.
+
+AuthProbe never asks the user to paste tokens into chat.
+
+Example `auth_required` response:
+
+```json
+{
+  "status": "auth_required",
+  "scan_id": "scan_123",
+  "auth_request": {
+    "type": "oauth2",
+    "resource": "https://api.example.com/mcp",
+    "issuer_candidates": ["https://login.example.com"],
+    "authorization_endpoint": "https://login.example.com/authorize",
+    "token_endpoint": "https://login.example.com/token",
+    "device_authorization_endpoint": "https://login.example.com/device",
+    "recommended_grant_types": ["authorization_code+pkce", "device_code"],
+    "recommended_scopes": ["openid", "profile"],
+    "notes": "Host client should complete OAuth and provide credential_ref. Do not paste tokens."
+  },
+  "next_action": {
+    "type": "call_tool",
+    "tool_name": "authprobe.scan_http_with_credentials",
+    "args": {
+      "target_url": "https://api.example.com/mcp",
+      "credential_ref": "<host-provided>"
+    },
+    "when": "after_client_oauth_complete"
+  }
+}
+```
+
+### Dev-mode credential_ref mapping
+
+For local tests/CI, map `credential_ref` using one of:
+
+- `AUTHPROBE_MCP_CREDENTIALS="ref1=Bearer abc;ref2=Bearer def"`
+- `AUTHPROBE_MCP_CREDENTIALS_FILE=/path/credentials.json` where JSON is `{ "ref1": "Bearer abc" }`
+
+These are stub backends for development; production host integration should resolve credentials through host-managed secure handles.

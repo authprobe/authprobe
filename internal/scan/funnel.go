@@ -469,9 +469,17 @@ func (f *funnel) buildReport() ScanReport {
 		PRMOK:           f.prmOK,
 		OAuthDiscovery:  f.oauthDiscoveryOK,
 		AuthzMetadataOK: f.authzMetadataOK,
-		Steps:           f.steps,
-		Findings:        f.findings,
-		PrimaryFinding:  choosePrimaryFinding(f.findings),
+		AuthDiscovery: AuthDiscoverySummary{
+			IssuerCandidates:            append([]string{}, f.prmResult.AuthorizationServers...),
+			AuthorizationEndpoint:       firstNonEmpty(f.authMetadata.AuthorizationEndpoints),
+			TokenEndpoint:               firstNonEmpty(f.authMetadata.TokenEndpoints),
+			DeviceAuthorizationEndpoint: f.authMetadata.DeviceAuthorizationEndpoint,
+			GrantTypesSupported:         uniqueStrings(f.authMetadata.GrantTypesSupported),
+			ScopesSupported:             uniqueStrings(f.authMetadata.ScopesSupported),
+		},
+		Steps:          f.steps,
+		Findings:       f.findings,
+		PrimaryFinding: choosePrimaryFinding(f.findings),
 	}
 }
 
@@ -577,4 +585,30 @@ func RunScanFunnel(config ScanConfig, stdout io.Writer, verboseOutput io.Writer)
 	}
 
 	return report, summary, nil
+}
+
+func firstNonEmpty(values []string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
