@@ -99,9 +99,27 @@ USAGE:
 
 COMMANDS:
   scan       Diagnose MCP OAuth by running a staged probe.
+  mcp        Run AuthProbe's MCP test server (stdio or HTTP transport).
 
 Use "authprobe <command> --help" for more information about a command.
 
 For the latest version, full documentation, and all options visit:
   https://github.com/authprobe/authprobe
+`
+
+const mcpHelp = `authprobe mcp: Run AuthProbe's MCP test server for local validation.
+
+USAGE:
+  authprobe mcp [flags]
+
+FLAGS:
+      --transport <mode>   MCP transport: stdio or http. Default: stdio
+      --http-addr <addr>   Address for HTTP transport. Default: 127.0.0.1:38080
+      --http-path <path>   Path for HTTP transport. Default: /mcp
+      --auth-required      Advertise OAuth-protected-resource behavior (401 challenge + PRM/auth metadata).
+
+EXAMPLES:
+  authprobe mcp
+  authprobe mcp --transport http --http-addr 127.0.0.1:38080 --http-path /mcp
+  authprobe mcp --transport http --auth-required
 `

@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"encoding/json"
@@ -10,9 +10,6 @@ import (
 	"authprobe/internal/mcpserver"
 )
 
-// TestStartupConnectMessageStdio validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestStartupConnectMessageStdio(t *testing.T) {
 	msg := startupConnectMessage("stdio", "127.0.0.1:38080", "/mcp", false)
 	if !strings.Contains(msg, "Client config") {
@@ -21,11 +18,11 @@ func TestStartupConnectMessageStdio(t *testing.T) {
 	if !strings.Contains(msg, `"command"`) || !strings.Contains(msg, `"args"`) {
 		t.Fatalf("expected command/args in startup message, got: %s", msg)
 	}
+	if !strings.Contains(msg, `"mcp"`) {
+		t.Fatalf("expected mcp subcommand in startup message, got: %s", msg)
+	}
 }
 
-// TestStartupConnectMessageHTTP validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestStartupConnectMessageHTTP(t *testing.T) {
 	msg := startupConnectMessage("http", "127.0.0.1:38080", "mcp", true)
 	if !strings.Contains(msg, "http://127.0.0.1:38080/mcp") {
@@ -36,9 +33,6 @@ func TestStartupConnectMessageHTTP(t *testing.T) {
 	}
 }
 
-// TestNormalizePath validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestNormalizePath(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -55,9 +49,6 @@ func TestNormalizePath(t *testing.T) {
 	}
 }
 
-// TestHTTPMCPProbeChallenge validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestHTTPMCPProbeChallenge(t *testing.T) {
 	s := mcpserver.New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
 	ts := httptest.NewServer(buildHTTPMux(s, "/mcp", true))
@@ -76,9 +67,6 @@ func TestHTTPMCPProbeChallenge(t *testing.T) {
 	}
 }
 
-// TestHTTPMCPProbePublicMode validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestHTTPMCPProbePublicMode(t *testing.T) {
 	s := mcpserver.New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
 	ts := httptest.NewServer(buildHTTPMux(s, "/mcp", false))
@@ -94,9 +82,6 @@ func TestHTTPMCPProbePublicMode(t *testing.T) {
 	}
 }
 
-// TestHTTPPRMDiscoveryEndpoints validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestHTTPPRMDiscoveryEndpoints(t *testing.T) {
 	s := mcpserver.New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
 	ts := httptest.NewServer(buildHTTPMux(s, "/mcp", true))
@@ -126,9 +111,6 @@ func TestHTTPPRMDiscoveryEndpoints(t *testing.T) {
 	}
 }
 
-// TestHTTPPRMDiscoveryDisabledInPublicMode validates expected behavior for this unit-test scenario.
-// Inputs: testing context plus scenario-specific fixtures/arguments.
-// Outputs: none (fails test on unexpected results).
 func TestHTTPPRMDiscoveryDisabledInPublicMode(t *testing.T) {
 	s := mcpserver.New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
 	ts := httptest.NewServer(buildHTTPMux(s, "/mcp", false))

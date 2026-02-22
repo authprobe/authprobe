@@ -43,6 +43,9 @@ var versionInfo = VersionInfo{
 	Date:    "unknown",
 }
 
+// SetVersionInfo updates runtime version metadata used by --version output.
+// Inputs: VersionInfo values from build-time ldflags.
+// Outputs: none (mutates package-level versionInfo).
 func SetVersionInfo(info VersionInfo) {
 	if info.Version != "" {
 		versionInfo.Version = info.Version
@@ -55,21 +58,33 @@ func SetVersionInfo(info VersionInfo) {
 	}
 }
 
+// VersionString returns the formatted version banner for CLI output.
+// Inputs: none.
+// Outputs: single-line version string.
 func VersionString() string {
 	return fmt.Sprintf("authprobe %s (commit %s, built %s)", versionInfo.Version, versionInfo.Commit, versionInfo.Date)
 }
 
 type stringSlice []string
 
+// String renders the header flag accumulator for debugging and flag package output.
+// Inputs: receiver state.
+// Outputs: formatted slice string.
 func (s *stringSlice) String() string {
 	return fmt.Sprintf("%v", []string(*s))
 }
 
+// Set appends a header flag value to the accumulator.
+// Inputs: one header string value.
+// Outputs: nil error for flag.Value compatibility.
 func (s *stringSlice) Set(value string) error {
 	*s = append(*s, value)
 	return nil
 }
 
+// Run dispatches top-level CLI commands and returns process exit code.
+// Inputs: argv-like args slice, stdout writer, stderr writer.
+// Outputs: integer exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || isHelp(args[0]) {
 		fmt.Fprint(stdout, rootHelp)
@@ -82,6 +97,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "scan":
 		return runScan(args[1:], stdout, stderr)
+	case "mcp":
+		return runMCP(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		fmt.Fprint(stderr, rootHelp)
@@ -89,6 +106,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+// runScan parses scan flags, executes probes, and writes reports/output.
+// Inputs: scan args, stdout writer, stderr writer.
+// Outputs: integer exit code.
 func runScan(args []string, stdout, stderr io.Writer) int {
 	if hasHelp(args) {
 		fmt.Fprint(stdout, scanHelp)
@@ -288,11 +308,17 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// isStdoutPath checks whether a destination path is stdout shorthand.
+// Inputs: path string.
+// Outputs: true when path is "-".
 func isStdoutPath(path string) bool {
 	trimmed := strings.TrimSpace(path)
 	return trimmed == "-" || trimmed == "/dev/stdout"
 }
 
+// hasHelp returns true when args contain any recognized help flag.
+// Inputs: argument list.
+// Outputs: boolean help indicator.
 func hasHelp(args []string) bool {
 	for _, arg := range args {
 		if isHelp(arg) {
@@ -302,10 +328,16 @@ func hasHelp(args []string) bool {
 	return false
 }
 
+// isHelp determines whether a single token is a help token.
+// Inputs: one argument token.
+// Outputs: boolean help indicator.
 func isHelp(arg string) bool {
 	return arg == "-h" || arg == "--help"
 }
 
+// toolTitle extracts a human-friendly tool title from MCP tool metadata.
+// Inputs: tool detail structure.
+// Outputs: preferred title string or empty string.
 func toolTitle(tool scan.MCPToolDetail) string {
 	if tool.Annotations == nil {
 		return ""
@@ -320,6 +352,9 @@ func toolTitle(tool scan.MCPToolDetail) string {
 	return ""
 }
 
+// gatewayPathFromTarget derives the HTTP path for stdio bridge mode.
+// Inputs: optional target URL.
+// Outputs: normalized path or error.
 func gatewayPathFromTarget(target string) (string, error) {
 	trimmed := strings.TrimSpace(target)
 	if trimmed == "" {
