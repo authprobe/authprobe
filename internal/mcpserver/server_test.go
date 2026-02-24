@@ -435,6 +435,154 @@ func TestRedactionNoTokenLeak(t *testing.T) {
 	}
 }
 
+func TestEvictExpiredSessionsRemovesExpired(t *testing.T) {
+	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
+	baseTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return baseTime }
+
+	s.sessions["expired1"] = &scanSession{
+		ScanID:           "expired1",
+		SessionExpiresAt: baseTime.Add(-1 * time.Minute),
+		TokenExpiresAt:   baseTime.Add(10 * time.Minute),
+	}
+	s.sessions["expired2"] = &scanSession{
+		ScanID:           "expired2",
+		SessionExpiresAt: baseTime.Add(-5 * time.Minute),
+		TokenExpiresAt:   baseTime.Add(10 * time.Minute),
+	}
+	s.sessions["active"] = &scanSession{
+		ScanID:           "active",
+		SessionExpiresAt: baseTime.Add(5 * time.Minute),
+		TokenExpiresAt:   baseTime.Add(10 * time.Minute),
+	}
+
+	s.evictExpiredSessions()
+
+	if _, ok := s.sessions["expired1"]; ok {
+		t.Fatalf("expected expired1 to be evicted")
+	}
+	if _, ok := s.sessions["expired2"]; ok {
+		t.Fatalf("expected expired2 to be evicted")
+	}
+	if _, ok := s.sessions["active"]; !ok {
+		t.Fatalf("expected active session to be kept")
+	}
+}
+
+func TestEvictExpiredSessionsKeepsNonExpired(t *testing.T) {
+	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
+	baseTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return baseTime }
+
+	s.sessions["s1"] = &scanSession{
+		ScanID:           "s1",
+		SessionExpiresAt: baseTime.Add(1 * time.Minute),
+		TokenExpiresAt:   baseTime.Add(10 * time.Minute),
+	}
+	s.sessions["s2"] = &scanSession{
+		ScanID:           "s2",
+		SessionExpiresAt: baseTime.Add(sessionTTL),
+		TokenExpiresAt:   baseTime.Add(20 * time.Minute),
+	}
+
+	s.evictExpiredSessions()
+
+	if len(s.sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(s.sessions))
+	}
+	if _, ok := s.sessions["s1"]; !ok {
+		t.Fatalf("expected s1 to be kept")
+	}
+	if _, ok := s.sessions["s2"]; !ok {
+		t.Fatalf("expected s2 to be kept")
+	}
+}
+
+func TestScanResumeExpiredSession(t *testing.T) {
+	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
+	baseTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return baseTime }
+
+	s.sessions["scan_123"] = &scanSession{
+		ScanID:           "scan_123",
+		SessionExpiresAt: baseTime.Add(sessionTTL),
+		TokenExpiresAt:   baseTime.Add(10 * time.Minute),
+	}
+
+	s.now = func() time.Time { return baseTime.Add(sessionTTL + 1*time.Second) }
+
+	result, err := s.scanResume(map[string]any{"scan_id": "scan_123"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["status"] != "auth_required" {
+		t.Fatalf("expected auth_required, got %v", result["status"])
+	}
+	action, _ := result["next_action"].(string)
+	if !strings.Contains(action, "expired") {
+		t.Fatalf("expected expired message in next_action, got %q", action)
+	}
+}
+
+func TestScanResumeExpiredToken(t *testing.T) {
+	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
+	baseTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return baseTime }
+
+	s.sessions["scan_456"] = &scanSession{
+		ScanID:           "scan_456",
+		SessionExpiresAt: baseTime.Add(sessionTTL),
+		TokenExpiresAt:   baseTime.Add(5 * time.Minute),
+	}
+
+	s.now = func() time.Time { return baseTime.Add(6 * time.Minute) }
+
+	result, err := s.scanResume(map[string]any{"scan_id": "scan_456"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["status"] != "auth_required" {
+		t.Fatalf("expected auth_required, got %v", result["status"])
+	}
+}
+
+func TestStartAuthAssistSessionTTL(t *testing.T) {
+	fx := newOAuthFixture(t)
+	defer fx.server.Close()
+	s := New(strings.NewReader(""), &strings.Builder{}, &strings.Builder{})
+	baseTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return baseTime }
+
+	result, err := s.callTool("authprobe.scan_http", map[string]any{
+		"target_url":            fx.server.URL + "/mcp",
+		"auth_assist":           "auto",
+		"allow_private_issuers": true,
+		"mcp_mode":              "best-effort",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["status"] != "awaiting_user_auth" {
+		t.Fatalf("expected awaiting_user_auth, got %v", result["status"])
+	}
+	scanID, _ := result["scan_id"].(string)
+	if scanID == "" {
+		t.Fatalf("expected scan_id")
+	}
+
+	sess, ok := s.sessions[scanID]
+	if !ok {
+		t.Fatalf("expected session to exist for scan_id %s", scanID)
+	}
+	expectedExpiry := baseTime.Add(sessionTTL)
+	if !sess.SessionExpiresAt.Equal(expectedExpiry) {
+		t.Fatalf("expected SessionExpiresAt=%v, got %v", expectedExpiry, sess.SessionExpiresAt)
+	}
+	if sess.TokenExpiresAt.Before(baseTime) || sess.TokenExpiresAt.Equal(baseTime) {
+		t.Fatalf("expected TokenExpiresAt to be after base time, got %v", sess.TokenExpiresAt)
+	}
+}
+
 func TestCredentialFileProvider(t *testing.T) {
 	f, err := os.CreateTemp("", "authprobe-creds-*.json")
 	if err != nil {

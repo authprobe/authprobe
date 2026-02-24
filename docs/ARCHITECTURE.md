@@ -78,6 +78,25 @@ Important files:
   launched via `--stdio-command`
 - `version_negotiation.go` -- MCP protocol version negotiation logic
 
+### Stdio Gateway
+
+The stdio gateway (`stdio_gateway.go`) bridges AuthProbe's HTTP-based scan flow
+to local MCP servers that communicate via stdio JSON-RPC instead of HTTP.
+
+When the user passes `--stdio-command`, `StartStdioGateway` spawns the command
+as a child process, opens its stdin/stdout pipes, and starts a local HTTP server
+on an ephemeral `127.0.0.1` port. Incoming HTTP POST requests are written as
+newline-delimited JSON-RPC to the process's stdin; the response line read from
+stdout is returned as the HTTP response body. GET requests return a minimal SSE
+response for probe compatibility.
+
+The gateway is transparent to the rest of the scan engine -- it produces a
+`http://127.0.0.1:<port><path>` URL that the funnel treats like any remote MCP
+endpoint. A `/debug` endpoint exposes request counts, recent stderr, and the
+last request/response for troubleshooting. The gateway is torn down after the
+scan via a cleanup function that shuts down the HTTP server and kills the child
+process.
+
 ### `internal/mcpserver`
 
 A self-contained JSON-RPC server that wraps the scan engine as MCP tools.
