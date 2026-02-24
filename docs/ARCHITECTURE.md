@@ -3,7 +3,7 @@
 This document describes the high-level architecture of AuthProbe.
 If you want to familiarize yourself with the codebase, you are in the right place.
 
-See also `PRD.md` for the product requirements and finding code catalog.
+See also `docs/PRD.md` for the product requirements and finding code catalog.
 
 ## Bird's Eye View
 
@@ -31,7 +31,7 @@ authprobe/
 │   ├── scan/            # Core scan engine: probes, funnel, output formatting
 │   │   └── llm/         # LLM provider adapters (OpenAI, Anthropic)
 │   └── mcpserver/       # Embedded MCP server (stdio + HTTP transports)
-├── PRD.md               # Product requirements, finding codes, severity rules
+├── docs/PRD.md          # Product requirements, finding codes, severity rules
 ├── action.yml           # GitHub Action wrapper
 └── Dockerfile
 ```
@@ -107,7 +107,7 @@ Use symbol search to find these -- they are the load-bearing types:
   (PASS/FAIL/SKIP), detail string.
 - **`Finding`** (scan package) -- a diagnostic issue: code, severity,
   confidence, evidence lines. Finding codes are stable identifiers enumerated
-  in `PRD.md`.
+  in `docs/PRD.md`.
 - **`TraceEntry`** (scan package) -- an HTTP request/response pair captured
   during the scan, used for verbose output and evidence bundles.
 - **`funnel`** (scan package, unexported) -- the scan orchestrator. Holds the

@@ -6,7 +6,7 @@ LDFLAGS   = -s -w \
             -X main.commit=$(COMMIT) \
             -X main.date=$(DATE)
 
-.PHONY: build install test cover clean
+.PHONY: build install test cover lint clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o authprobe ./cmd/authprobe
@@ -20,6 +20,9 @@ test:
 cover:
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out
+
+lint:
+	@./scripts/lint-invariants.sh
 
 clean:
 	rm -f authprobe coverage.out

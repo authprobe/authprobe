@@ -72,5 +72,5 @@ The DNS resolution step catches cases where a hostname like `internal.evil.com` 
 
 ## See Also
 
-- [PRD: Private issuer safety (SSRF guardrail)](../PRD.md#private-issuer-safety-ssrf-guardrail)
+- [PRD: Private issuer safety (SSRF guardrail)](PRD.md#private-issuer-safety-ssrf-guardrail)
 - [Scan funnel documentation](funnel.md)

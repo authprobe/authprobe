@@ -689,7 +689,7 @@ issue with the scan output (`--json -` or `--bundle`).
 ---
 
 ## Additional Docs
-- Architecture overview: [`ARCHITECTURE.md`](ARCHITECTURE.md) — high-level code map, key types, invariants, and layer boundaries
+- Architecture overview: [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) — high-level code map, key types, invariants, and layer boundaries
 - MCP client-managed OAuth: `docs/mcp-client-managed-oauth.md`
 
 ---
