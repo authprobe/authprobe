@@ -23,7 +23,8 @@ MCP + OAuth breaks for mundane reasons like missing headers, wrong content types
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-See [docs/funnel.md](docs/funnel.md) for the full breakdown of what gets checked and why.
+See [docs/funnel.md](docs/funnel.md) for the full breakdown of what gets checked and why. 
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the code map and design invariants.
 
 Specs involved: [MCP](https://modelcontextprotocol.io/specification), [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728), [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414), [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707), [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636), [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591), [RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517), [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), [RFC 9110](https://datatracker.ietf.org/doc/html/rfc9110).
 
@@ -688,6 +689,7 @@ issue with the scan output (`--json -` or `--bundle`).
 ---
 
 ## Additional Docs
+- Architecture overview: [`ARCHITECTURE.md`](ARCHITECTURE.md) — high-level code map, key types, invariants, and layer boundaries
 - MCP client-managed OAuth: `docs/mcp-client-managed-oauth.md`
 
 ---
