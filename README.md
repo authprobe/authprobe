@@ -136,6 +136,27 @@ AuthProbe helps you isolate failures by capturing network traces for failed prob
 authprobe scan https://mcp.example.com/mcp
 ```
 
+#### Embed as a Go package
+
+AuthProbe also exposes a small public Go wrapper for services that need typed
+scan reports without starting the CLI:
+
+```go
+import authprobescan "authprobe/pkg/scan"
+
+result, err := authprobescan.Run(authprobescan.Options{
+	TargetURL:           "https://mcp.example.com/mcp",
+	MCPMode:             authprobescan.MCPModeStrict,
+	RFCMode:             authprobescan.RFCModeBestEffort,
+	Timeout:             8 * time.Second,
+	AllowPrivateIssuers: false,
+})
+if err != nil {
+	return err
+}
+_ = result.Report.Findings
+```
+
 #### Scan stdio MCP servers via local bridge
 
 AuthProbe can launch a stdio MCP command and bridge it to a local HTTP endpoint automatically:

@@ -11,6 +11,7 @@ document. Quick orientation:
 
 ```
 cmd/authprobe/          → main.go entry point (injects build metadata, calls cli.Run)
+pkg/scan/               → Public Go wrapper around the scan engine for embedders
 internal/cli/           → CLI layer: flag parsing, command routing, output writing
 internal/scan/          → Core scan engine: probes, funnel, findings, output formatting
 internal/scan/llm/      → LLM provider adapters (OpenAI, Anthropic)
@@ -21,11 +22,14 @@ internal/mcpserver/     → Embedded MCP server (stdio + HTTP transports)
 
 ```
 CLI (cli pkg)  ──► ScanConfig ──►  Scan Engine (scan pkg)
+Public Go API (pkg/scan) ──► ScanConfig ──►  Scan Engine (scan pkg)
 MCP Server (mcpserver pkg)  ──► ScanConfig ──►  Scan Engine (scan pkg)
 ```
 
 - **CLI and MCP Server never make HTTP requests directly.** They construct a
   `ScanConfig` and call `scan.RunScanFunnel`.
+- **Public Go API callers never import `internal/scan`.** They use `pkg/scan`
+  typed options and reports; the wrapper owns validation and engine config.
 - **Scan Engine never reads flags or os.Args.** It receives a `ScanConfig`.
 - **Output rendering is pure formatting.** `output.go` consumes `ScanReport`
   and `ScanConfig` but never calls probes or makes HTTP requests.

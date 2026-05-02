@@ -26,6 +26,7 @@ There are zero external Go dependencies (`go.mod` has no `require` block).
 ```
 authprobe/
 ├── cmd/authprobe/       # main.go -- injects build metadata, calls cli.Run
+├── pkg/scan/            # Public Go API wrapper around the scan engine
 ├── internal/
 │   ├── cli/             # CLI layer: flag parsing, command routing, output writing
 │   ├── scan/            # Core scan engine: probes, funnel, output formatting
@@ -40,6 +41,16 @@ authprobe/
 
 The entry point. `main.go` sets version/commit/date via `cli.SetVersionInfo`,
 then delegates to `cli.Run`. Nothing else lives here.
+
+### `pkg/scan`
+
+The public Go integration boundary. It exposes typed scan options for target
+URL, MCP/RFC modes, timeout, headers, and scan policy toggles; validates those
+inputs; then calls the internal scan engine without invoking a subprocess.
+
+The package aliases the existing `ScanReport`, `ScanSummary`, `ScanStep`,
+`Finding`, `TraceEntry`, and `AuthDiscoverySummary` types so embedders can map
+stable AuthProbe findings without parsing CLI JSON.
 
 ### `internal/cli`
 
@@ -183,18 +194,18 @@ together with output config, drives rendering.
 
 ## Boundaries
 
-The project has three distinct layers with clean boundaries:
+The project has boundary-facing callers with a shared scan-engine core:
 
 ```
 ┌─────────────┐     ┌──────────────┐
-│   CLI       │     │  MCP Server  │
-│ (cli pkg)   │     │ (mcpserver)  │
-└──────┬──────┘     └──────┬───────┘
-       │                   │
-       │   ScanConfig      │   ScanConfig
-       │   ──────────►     │   ──────────►
-       │                   │
-       ▼                   ▼
+│   CLI       │     │  MCP Server  │     │ Public Go API │
+│ (cli pkg)   │     │ (mcpserver)  │     │  (pkg/scan)   │
+└──────┬──────┘     └──────┬───────┘     └───────┬───────┘
+       │                   │                     │
+       │   ScanConfig      │   ScanConfig        │ ScanConfig
+       │   ──────────►     │   ──────────►       │ ─────────►
+       │                   │                     │
+       ▼                   ▼                     ▼
 ┌──────────────────────────────────┐
 │         Scan Engine              │
 │         (scan pkg)               │
@@ -212,6 +223,10 @@ The project has three distinct layers with clean boundaries:
 - **MCP Server → Scan:** The MCP server also calls `scan.RunScanFunnel` with a
   `ScanConfig`. It adds session management and scan caching on top, but the
   scan itself is identical to the CLI path.
+
+- **Public Go API → Scan:** `pkg/scan` validates typed `Options`, applies
+  library-safe defaults, keeps redaction enabled, and calls `scan.RunScanFunnel`
+  with discarded writers so embedders receive typed results without CLI output.
 
 - **Scan → HTTP:** All HTTP I/O is encapsulated in the `funnel` struct's
   client. Timeout, TLS, redirect policy, and custom headers are configured once
