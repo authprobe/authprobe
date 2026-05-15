@@ -374,20 +374,3 @@ func isLocalOrPrivateURL(parsed *url.URL) bool {
 	}
 	return isDisallowedIP(ip)
 }
-
-func checkEndpointHostMismatch(findings *[]Finding, endpoint string, issuerHost string, name string) {
-	if endpoint == "" || issuerHost == "" {
-		return
-	}
-	parsedEndpoint, err := url.Parse(endpoint)
-	if err != nil {
-		return
-	}
-	endpointHost := parsedEndpoint.Hostname()
-	if endpointHost == "" {
-		return
-	}
-	if !strings.EqualFold(endpointHost, issuerHost) {
-		*findings = append(*findings, newFinding("AUTH_SERVER_ENDPOINT_HOST_MISMATCH", fmt.Sprintf("%s host %q != issuer host %q", name, endpointHost, issuerHost)))
-	}
-}
