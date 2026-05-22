@@ -172,14 +172,6 @@ func fetchAuthServerMetadata(client *http.Client, config ScanConfig, prm prmResu
 				if urlFindings := validateURLString(tokenEndpoint, "token_endpoint", config, false); len(urlFindings) > 0 {
 					findings = append(findings, urlFindings...)
 				}
-				parsedIssuer, err := url.Parse(issuer)
-				if err == nil {
-					issuerHost := parsedIssuer.Hostname()
-					if issuerHost != "" {
-						checkEndpointHostMismatch(&findings, authorizationEndpoint, issuerHost, "authorization_endpoint")
-						checkEndpointHostMismatch(&findings, tokenEndpoint, issuerHost, "token_endpoint")
-					}
-				}
 				if methods, ok := obj["code_challenge_methods_supported"].([]any); ok {
 					if !containsString(methods, "S256") {
 						findings = append(findings, newFinding("AUTH_SERVER_PKCE_S256_MISSING", fmt.Sprintf("%s missing S256", issuer)))

@@ -174,7 +174,6 @@ AuthProbe attempts authorization server discovery in a bounded fallback sequence
 | `AUTH_SERVER_ISSUER_MISMATCH`                | `issuer` equals discovery issuer                   | [RFC 8414 §2](https://datatracker.ietf.org/doc/html/rfc8414#section-2)     |
 | `AUTH_SERVER_ISSUER_QUERY_FRAGMENT`          | Issuer has no query/fragment                       | [RFC 8414 §2](https://datatracker.ietf.org/doc/html/rfc8414#section-2)     |
 | `AUTH_SERVER_ISSUER_PRIVATE_BLOCKED`         | Issuer not private (SSRF)                          | Local policy                                                               |
-| `AUTH_SERVER_ENDPOINT_HOST_MISMATCH`         | Endpoints align with issuer host                   | [RFC 8414 §2](https://datatracker.ietf.org/doc/html/rfc8414#section-2)     |
 | `AUTH_SERVER_PKCE_S256_MISSING`              | `code_challenge_methods_supported` includes `S256` | [RFC 7636 §4.2](https://datatracker.ietf.org/doc/html/rfc7636#section-4.2) |
 | `AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH`   | `protected_resources` includes resource            | [RFC 8707 §2](https://datatracker.ietf.org/doc/html/rfc8707#section-2)     |
 | `JWKS_FETCH_ERROR`                           | `jwks_uri` reachable                               | [RFC 7517 §5](https://datatracker.ietf.org/doc/html/rfc7517#section-5)     |

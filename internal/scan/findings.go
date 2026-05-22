@@ -147,8 +147,6 @@ func findingRFCExplanation(code string) string {
 		return "Issuer metadata resolution was blocked by local policy for private or disallowed addresses."
 	case "HEADER_STRIPPED_BY_PROXY_SUSPECTED":
 		return "The discovery header was missing, but metadata was still reachable, which can indicate proxy header stripping."
-	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH":
-		return "RFC 8414 expects metadata endpoints to align with the issuer host."
 	case "AUTH_SERVER_PKCE_S256_MISSING":
 		return "RFC 7636 requires support for the S256 code_challenge_method."
 	case "AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH":
@@ -302,8 +300,7 @@ func findingSeverity(code string) string {
 		"DCR_LOCALHOST_REDIRECT_ACCEPTED",
 		"DCR_EMPTY_REDIRECT_URIS_ACCEPTED":
 		return "medium"
-	case "AUTH_SERVER_ENDPOINT_HOST_MISMATCH",
-		"AUTH_SERVER_PKCE_S256_MISSING",
+	case "AUTH_SERVER_PKCE_S256_MISSING",
 		"AUTH_SERVER_PROTECTED_RESOURCES_MISMATCH",
 		"AUTH_SERVER_ROOT_WELLKNOWN_PROBE_FAILED",
 		"VERSION_MISMATCH",
